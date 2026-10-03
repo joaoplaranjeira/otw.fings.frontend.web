@@ -72,9 +72,11 @@ export type Budget = {
 export type RecurringExpense = {
   id: string; categoryId: string; subcategoryId?: string; description: string; merchantName?: string
   merchantTaxNumber?: string; amount: number; frequency: number; startDate: string; endDate?: string
-  nextOccurrenceDate?: string; isActive?: boolean
+  nextOccurrenceDate: string; isActive: boolean
 }
 export type RecurringExpensePayload = Omit<RecurringExpense, 'id' | 'nextOccurrenceDate' | 'isActive'>
+export type CreateRecurringExpensePayload = RecurringExpensePayload & { materializeNow?: boolean }
+export type RecurringExpenseMaterialization = { createdCount: number; throughDate: string; nextOccurrenceDate: string; isActive: boolean }
 export type ReceiptParseLine = {
   description: string; quantity?: number | null; unitPrice?: number | null; amount: number
   suggestedCategoryId?: string | null; suggestedCategoryName?: string | null
@@ -98,8 +100,9 @@ export const api = {
   dashboard: (householdId: string, year: number, month: number, token: string) => request<Dashboard>(`/api/households/${householdId}/dashboard/${year}/${month}`, {}, token),
   budgets: (householdId: string, token: string) => request<Budget[]>(`/api/households/${householdId}/budgets`, {}, token),
   recurringExpenses: (householdId: string, token: string) => request<RecurringExpense[]>(`/api/households/${householdId}/recurring-expenses`, {}, token),
-  createRecurringExpense: (householdId: string, data: RecurringExpensePayload, token: string) => request<RecurringExpense>(`/api/households/${householdId}/recurring-expenses`, { method: 'POST', body: JSON.stringify(data) }, token),
+  createRecurringExpense: (householdId: string, data: CreateRecurringExpensePayload, token: string) => request<RecurringExpense>(`/api/households/${householdId}/recurring-expenses`, { method: 'POST', body: JSON.stringify(data) }, token),
   updateRecurringExpense: (householdId: string, recurringExpenseId: string, data: RecurringExpensePayload, token: string) => request<RecurringExpense>(`/api/households/${householdId}/recurring-expenses/${recurringExpenseId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
+  materializeRecurringExpense: (householdId: string, recurringExpenseId: string, token: string) => request<RecurringExpenseMaterialization>(`/api/households/${householdId}/recurring-expenses/${recurringExpenseId}/materialize`, { method: 'POST' }, token),
   createExpense: (householdId: string, data: ExpensePayload, token: string) => request<Expense>(`/api/households/${householdId}/expenses`, { method: 'POST', body: JSON.stringify(data) }, token),
   updateExpense: (householdId: string, expenseId: string, data: UpdateExpensePayload, token: string) => request<Expense>(`/api/households/${householdId}/expenses/${expenseId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
   replaceExpenseLines: (householdId: string, expenseId: string, lines: ExpensePayloadLine[], token: string) => request<Expense>(`/api/households/${householdId}/expenses/${expenseId}/lines`, { method: 'PUT', body: JSON.stringify({ lines }) }, token),
