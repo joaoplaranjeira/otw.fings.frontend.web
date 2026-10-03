@@ -1,13 +1,19 @@
 const API_URL = (import.meta.env.VITE_FINGS_API_URL || 'http://localhost:5015').replace(/\/$/, '')
 
+export type ReceiptImageQuality = { score: number; level: string; acceptedWithRisk: boolean; warnings: string[] }
+
 export class ApiError extends Error {
   status: number
   fields?: Record<string, string[]>
+  code?: string
+  imageQuality?: ReceiptImageQuality
 
-  constructor(status: number, message: string, fields?: Record<string, string[]>) {
+  constructor(status: number, message: string, fields?: Record<string, string[]>, code?: string, imageQuality?: ReceiptImageQuality) {
     super(message)
     this.status = status
     this.fields = fields
+    this.code = code
+    this.imageQuality = imageQuality
   }
 }
 
@@ -30,6 +36,8 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
       response.status,
       body.detail || body.message || (response.status === 429 ? 'Demasiadas tentativas. Aguarda um momento.' : 'Não foi possível concluir o pedido.'),
       body.errors,
+      body.code,
+      body.imageQuality,
     )
   }
 
@@ -39,6 +47,10 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 
 export type Household = { id: string; name: string; currency: string; timeZone: string; role: number }
 export type User = { id: number; name: string; username: string; email: string }
+export type HouseholdRole = { value: number; name: string }
+export type HouseholdMember = {
+  id: string; userId: number; name: string; username: string; email: string; isActive: boolean; role: number
+}
 export type Category = {
   id: string; name: string; color?: string; icon?: string; isActive: boolean
   subcategories: { id: string; name: string; isActive: boolean }[]
@@ -85,7 +97,7 @@ export type ReceiptParseLine = {
 export type ReceiptParseResult = {
   parseId: string; merchantName?: string | null; merchantTaxNumber?: string | null; documentNumber?: string | null
   purchaseDate?: string | null; currency: string; subtotal?: number | null; tax?: number | null; total: number; linesTotal: number
-  lines: ReceiptParseLine[]; warnings: string[]
+  lines: ReceiptParseLine[]; warnings: string[]; imageQuality: ReceiptImageQuality
 }
 
 export const api = {
@@ -95,6 +107,10 @@ export const api = {
   me: (token: string) => request<User>('/api/users/me', {}, token),
   updateProfile: (data: { name: string; username: string }, token: string) => request<User>('/api/users/me', { method: 'PATCH', body: JSON.stringify(data) }, token),
   households: (token: string) => request<Household[]>('/api/households', {}, token),
+  householdRoles: (token: string) => request<HouseholdRole[]>('/api/household-roles', {}, token),
+  householdMembers: (householdId: string, token: string) => request<HouseholdMember[]>(`/api/households/${householdId}/members`, {}, token),
+  addHouseholdMember: (householdId: string, data: { email: string; role: number }, token: string) => request<HouseholdMember>(`/api/households/${householdId}/members`, { method: 'POST', body: JSON.stringify(data) }, token),
+  removeHouseholdMember: (householdId: string, memberId: string, token: string) => request<void>(`/api/households/${householdId}/members/${memberId}`, { method: 'DELETE' }, token),
   categories: (householdId: string, token: string) => request<Category[]>(`/api/households/${householdId}/categories`, {}, token),
   expenses: (householdId: string, from: string, to: string, token: string) => request<Expense[]>(`/api/households/${householdId}/expenses?from=${from}&to=${to}`, {}, token),
   dashboard: (householdId: string, year: number, month: number, token: string) => request<Dashboard>(`/api/households/${householdId}/dashboard/${year}/${month}`, {}, token),
@@ -111,9 +127,9 @@ export const api = {
   createSubcategory: (householdId: string, categoryId: string, name: string, token: string) => request<Category['subcategories'][number]>(`/api/households/${householdId}/categories/${categoryId}/subcategories`, { method: 'POST', body: JSON.stringify({ name }) }, token),
   updateSubcategory: (householdId: string, categoryId: string, subcategoryId: string, name: string, token: string) => request<Category['subcategories'][number]>(`/api/households/${householdId}/categories/${categoryId}/subcategories/${subcategoryId}`, { method: 'PATCH', body: JSON.stringify({ name }) }, token),
   createBudget: (householdId: string, data: object, token: string) => request<Budget>(`/api/households/${householdId}/budgets`, { method: 'POST', body: JSON.stringify(data) }, token),
-  parseReceipt: (householdId: string, file: File, token: string) => {
+  parseReceipt: (householdId: string, file: File, token: string, acceptLowQuality = false) => {
     const form = new FormData(); form.append('file', file)
-    return request<ReceiptParseResult>(`/api/households/${householdId}/receipts/parse`, { method: 'POST', body: form }, token)
+    return request<ReceiptParseResult>(`/api/households/${householdId}/receipts/parse?acceptLowQuality=${acceptLowQuality}`, { method: 'POST', body: form }, token)
   },
   validateReceiptParse: (householdId: string, parseId: string, data: { isValid: boolean; notes?: string | null }, token: string) => request(`/api/households/${householdId}/receipts/parses/${parseId}/validation`, { method: 'PATCH', body: JSON.stringify(data) }, token),
 }
