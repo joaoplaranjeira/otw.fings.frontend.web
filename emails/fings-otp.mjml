@@ -1,0 +1,104 @@
+<mjml>
+  <mj-head>
+    <mj-title>O teu código de acesso à Fings</mj-title>
+    <mj-preview>O teu código de acesso está pronto. É válido apenas durante alguns minutos.</mj-preview>
+    <mj-font name="DM Sans" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;display=swap" />
+    <mj-font name="Manrope" href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&amp;display=swap" />
+    <mj-attributes>
+      <mj-all font-family="'DM Sans', Arial, sans-serif" />
+      <mj-text color="#17171D" font-size="16px" line-height="26px" />
+    </mj-attributes>
+    <mj-style inline="inline">
+      .email-shell { box-shadow: 0 20px 60px rgba(23, 23, 29, 0.08); }
+      .otp-code { font-family: 'Manrope', Arial, sans-serif !important; }
+      .otp-code div { letter-spacing: 10px !important; }
+      .wordmark { font-family: 'Manrope', Arial, sans-serif !important; }
+      .wordmark div { letter-spacing: -1.2px !important; }
+      .footer-link a { color: #777985 !important; text-decoration: underline !important; }
+    </mj-style>
+  </mj-head>
+
+  <mj-body background-color="#F5F5F7" width="600px">
+    <mj-section padding="32px 16px 0">
+      <mj-column>
+        <mj-spacer height="1px" />
+      </mj-column>
+    </mj-section>
+
+    <mj-wrapper css-class="email-shell" background-color="#FFFFFF" border-radius="22px" padding="0">
+      <mj-section background-color="#17171D" border-radius="22px 22px 0 0" padding="34px 42px 32px">
+        <mj-column>
+          <mj-table padding="0">
+            <tr>
+              <td style="width:34px; vertical-align:middle;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:28px;height:28px;border:3px solid #FFFFFF;border-radius:9px;transform:rotate(-4deg);">
+                  <tr>
+                    <td style="padding:5px 4px 4px;vertical-align:bottom;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;height:15px;">
+                        <tr>
+                          <td style="width:5px;vertical-align:bottom;"><span style="display:block;width:5px;height:7px;background:#FFFFFF;border-radius:4px;"></span></td>
+                          <td style="width:3px;"></td>
+                          <td style="width:5px;vertical-align:bottom;"><span style="display:block;width:5px;height:12px;background:#FFFFFF;border-radius:4px;"></span></td>
+                          <td style="width:3px;"></td>
+                          <td style="width:5px;vertical-align:bottom;"><span style="display:block;width:5px;height:15px;background:#FFFFFF;border-radius:4px;"></span></td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+              <td style="vertical-align:middle;padding-left:10px;">
+                <div class="wordmark" style="font-family:'Manrope',Arial,sans-serif;font-size:25px;font-weight:800;line-height:30px;color:#FFFFFF;letter-spacing:-1.2px;">fings</div>
+              </td>
+            </tr>
+          </mj-table>
+
+          <mj-spacer height="42px" />
+          <mj-text padding="0 0 12px" color="#BDB5FF" font-size="11px" font-weight="800" letter-spacing="1.5px">
+            ACESSO SEGURO
+          </mj-text>
+          <mj-text padding="0" color="#FFFFFF" font-family="'Manrope', Arial, sans-serif" font-size="34px" font-weight="800" line-height="41px" letter-spacing="-1.5px">
+            O teu código está pronto.
+          </mj-text>
+          <mj-text padding="15px 0 0" color="#A9A8B0" font-size="16px" line-height="25px">
+            Usa o código abaixo para entrares na tua conta Fings.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+
+      <mj-section background-color="#FFFFFF" padding="38px 42px 18px">
+        <mj-column>
+          <mj-text align="center" padding="0 0 10px" color="#777985" font-size="11px" font-weight="800" letter-spacing="1.2px">
+            CÓDIGO DE VERIFICAÇÃO
+          </mj-text>
+
+          <mj-text css-class="otp-code" align="center" container-background-color="#F0EEFF" border="1px solid #E2DEFF" border-radius="16px" color="#5545ED" font-family="'Manrope', Arial, sans-serif" font-size="34px" font-weight="800" line-height="44px" letter-spacing="10px" padding="24px 18px 24px 28px">
+            {DATA_VARIABLE:otpCode}
+          </mj-text>
+
+          <mj-text align="center" padding="14px 12px 0" color="#777985" font-size="13px" line-height="21px">
+            Este código expira dentro de poucos minutos e só pode ser utilizado uma vez.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+
+      <mj-section background-color="#FFFFFF" padding="16px 42px 42px" border-radius="0 0 22px 22px">
+        <mj-column>
+          <mj-divider border-width="1px" border-color="#E9E9EE" padding="0 0 26px" />
+          <mj-text padding="0" color="#4C4C57" font-size="14px" line-height="23px">
+            Se não pediste este código, podes ignorar este email com segurança. Nunca partilhes este código — a equipa Fings não to irá pedir.
+          </mj-text>
+        </mj-column>
+      </mj-section>
+    </mj-wrapper>
+
+    <mj-section padding="24px 24px 34px">
+      <mj-column>
+        <mj-text align="center" padding="0" color="#9A9AA3" font-size="12px" line-height="19px">
+          Fings · A tua vida financeira, simples.<br />
+          Este é um email automático de segurança.
+        </mj-text>
+      </mj-column>
+    </mj-section>
+  </mj-body>
+</mjml>

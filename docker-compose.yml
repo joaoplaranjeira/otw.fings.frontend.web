@@ -1,0 +1,33 @@
+name: otw-fings-frontend-web
+
+services:
+  frontend:
+    container_name: otw.fings.frontend.web-dev
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "${FINGS_FRONTEND_PORT:-5175}:5173"
+    environment:
+      VITE_FINGS_API_URL: ${VITE_FINGS_API_URL:-http://localhost:5015}
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "100"
+    volumes:
+      - .:/app
+      - fings_node_modules:/app/node_modules
+    restart: unless-stopped
+
+  frontend-production:
+    profiles: ["production"]
+    container_name: otw.fings.frontend.web-production
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_FINGS_API_URL: ${VITE_FINGS_API_URL:-http://localhost:5015}
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  fings_node_modules:
