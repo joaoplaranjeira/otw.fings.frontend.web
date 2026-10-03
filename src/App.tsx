@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from '
 import {
   ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Bell, CalendarDays, Camera, Check,
   ChevronDown, ChevronRight, CircleHelp, CreditCard, FileText, Grid2X2, Home, Landmark,
-  LayoutDashboard, LoaderCircle, LockKeyhole, LogOut, Menu, MoreHorizontal, Plus, ReceiptText,
+  LayoutDashboard, LoaderCircle, LogOut, Menu, MoreHorizontal, Plus, ReceiptText,
   Pencil, Play, Repeat2, Search, Settings, ShieldCheck, ShoppingBasket, Sparkles, Tags, Trash2, TrendingDown, TrendingUp,
   TriangleAlert, Upload, UserRound, Utensils, WalletCards, X,
 } from 'lucide-react'
@@ -125,7 +125,6 @@ function Auth({ onAuthenticated }: { onAuthenticated: (token: string) => void })
         {step === 'email' && <>
           <p className="auth-switch">{mode === 'login' ? 'Ainda não tens conta?' : 'Já tens conta?'} <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>{mode === 'login' ? 'Criar conta' : 'Entrar'}</button></p>
         </>}
-        <div className="secure-note"><LockKeyhole size={14} /> Acesso protegido e sem palavra-passe</div>
         <div className="auth-mobile-proof"><ShieldCheck size={15}/><span>Finanças claras para toda a família</span></div>
       </div>
       <PoweredBy className="auth-powered" />
