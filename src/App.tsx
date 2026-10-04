@@ -369,12 +369,40 @@ function ReceiptModal({ householdId, token, categories, onClose, onCreated }: { 
     if(!editing||!window.matchMedia('(max-width: 560px)').matches)return
     const editor=document.querySelector('.receipt-result.editing')
     if(!editor)return
+    const modal=editor.closest('.modal-card')
+    const viewport=window.visualViewport
+    let returnScrollTop=modal?.scrollTop??0
+    let focusedViewportHeight=viewport?.height??window.innerHeight
+    let restoreTimer:number|undefined
     editor.querySelectorAll('input:not([type="date"])').forEach(input=>input.setAttribute('enterkeyhint','done'))
-    const focusField=(event:Event)=>{const target=event.target;if(!(target instanceof HTMLInputElement||target instanceof HTMLSelectElement))return;window.setTimeout(()=>target.scrollIntoView({behavior:'smooth',block:'center'}),180)}
-    const finishWithKeyboard=(event:Event)=>{if(!(event instanceof KeyboardEvent)||event.key!=='Enter'||!(event.target instanceof HTMLInputElement))return;event.preventDefault();event.target.blur()}
-    const finishPicker=(event:Event)=>{const target=event.target;if(target instanceof HTMLSelectElement||target instanceof HTMLInputElement&&target.type==='date')window.setTimeout(()=>target.blur(),80)}
-    editor.addEventListener('focusin',focusField);editor.addEventListener('keydown',finishWithKeyboard);editor.addEventListener('change',finishPicker)
-    return()=>{editor.removeEventListener('focusin',focusField);editor.removeEventListener('keydown',finishWithKeyboard);editor.removeEventListener('change',finishPicker)}
+    const restoreForm=()=>{
+      window.clearTimeout(restoreTimer)
+      restoreTimer=window.setTimeout(()=>{
+        if(modal)modal.scrollTo({top:returnScrollTop,behavior:'smooth'})
+      },120)
+    }
+    const finishField=(target:HTMLInputElement|HTMLSelectElement)=>{target.blur();restoreForm()}
+    const focusField=(event:Event)=>{
+      const target=event.target
+      if(!(target instanceof HTMLInputElement||target instanceof HTMLSelectElement))return
+      returnScrollTop=modal?.scrollTop??0
+      focusedViewportHeight=viewport?.height??window.innerHeight
+      window.setTimeout(()=>target.closest('label')?.scrollIntoView({behavior:'smooth',block:'nearest'}),180)
+    }
+    const leaveField=(event:Event)=>{
+      const next=event instanceof FocusEvent?event.relatedTarget:null
+      if(!(next instanceof HTMLInputElement||next instanceof HTMLSelectElement)||!editor.contains(next))restoreForm()
+    }
+    const finishWithKeyboard=(event:Event)=>{if(!(event instanceof KeyboardEvent)||event.key!=='Enter'||!(event.target instanceof HTMLInputElement))return;event.preventDefault();finishField(event.target)}
+    const finishPicker=(event:Event)=>{const target=event.target;if(target instanceof HTMLSelectElement||target instanceof HTMLInputElement&&target.type==='date')window.setTimeout(()=>finishField(target),80)}
+    const finishWhenKeyboardCloses=()=>{
+      const active=document.activeElement
+      if(!(active instanceof HTMLInputElement||active instanceof HTMLSelectElement)||!editor.contains(active))return
+      const currentHeight=viewport?.height??window.innerHeight
+      if(currentHeight>focusedViewportHeight+80)finishField(active)
+    }
+    editor.addEventListener('focusin',focusField);editor.addEventListener('focusout',leaveField);editor.addEventListener('keydown',finishWithKeyboard);editor.addEventListener('change',finishPicker);viewport?.addEventListener('resize',finishWhenKeyboardCloses)
+    return()=>{window.clearTimeout(restoreTimer);editor.removeEventListener('focusin',focusField);editor.removeEventListener('focusout',leaveField);editor.removeEventListener('keydown',finishWithKeyboard);editor.removeEventListener('change',finishPicker);viewport?.removeEventListener('resize',finishWhenKeyboardCloses)}
   },[editing,editStep])
   async function parse(acceptLowQuality=false){if(!file)return;setLoading(true);setError('');try{const parsed=await api.parseReceipt(householdId,file,token,acceptLowQuality);setQualityWarning(undefined);setResult(parsed);setOriginal(structuredClone(parsed));setEditing(false);setEditStep(0)}catch(err){if(err instanceof ApiError&&err.status===422&&err.code==='receipt_image_quality_insufficient'&&err.imageQuality)setQualityWarning(err.imageQuality);else setError(err instanceof ApiError?err.message:'Não foi possível analisar o talão.')}finally{setLoading(false)}}
   function chooseAnotherFile(){setFile(undefined);setQualityWarning(undefined);setError('');if(inputRef.current)inputRef.current.value=''}
