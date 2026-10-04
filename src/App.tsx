@@ -35,7 +35,7 @@ function DecimalInput({value,onChange,currency=false,required=false,placeholder=
   const inputRef=useRef<HTMLInputElement>(null)
   const [display,setDisplay]=useState(value==null||!Number.isFinite(value)?'':String(value))
   useEffect(()=>{if(document.activeElement!==inputRef.current)setDisplay(value==null||!Number.isFinite(value)?'':String(value))},[value])
-  const input=<input ref={inputRef} type="text" inputMode="decimal" enterKeyHint="done" autoComplete="off" pattern="[0-9]*[.]?[0-9]*" required={required} value={display} placeholder={placeholder} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.blur()}}} onChange={event=>{const next=decimalCharacters(event.target.value);setDisplay(next);if(!next)onChange(null);else{const parsed=Number(next);onChange(Number.isFinite(parsed)?parsed:null)}}}/>
+  const input=<input ref={inputRef} type="text" inputMode="decimal" enterKeyHint="done" autoComplete="off" pattern="[0-9]*[.]?[0-9]*" required={required} value={display} placeholder={placeholder} onChange={event=>{const next=decimalCharacters(event.target.value);setDisplay(next);if(!next)onChange(null);else{const parsed=Number(next);onChange(Number.isFinite(parsed)?parsed:null)}}}/>
   return currency?<span className="receipt-money-input"><i>€</i>{input}</span>:input
 }
 
@@ -364,46 +364,7 @@ function ReceiptQualityDecision({ quality, loading, onChooseAnother, onAccept }:
 
 function ReceiptModal({ householdId, token, categories, onClose, onCreated }: { householdId:string; token:string; categories:Category[]; onClose:()=>void; onCreated:(item:Expense)=>void }) {
   const inputRef=useRef<HTMLInputElement>(null);const [file,setFile]=useState<File>();const [loading,setLoading]=useState(false);const [result,setResult]=useState<ReceiptParseResult>();const [original,setOriginal]=useState<ReceiptParseResult>();const [editing,setEditing]=useState(false);const [editStep,setEditStep]=useState(0);const [qualityWarning,setQualityWarning]=useState<ReceiptImageQuality>();const [error,setError]=useState('')
-  useEffect(()=>{if(!editing)return;const autoFocused=document.querySelector('.receipt-result.editing [autofocus]');if(autoFocused===document.activeElement)(document.activeElement as HTMLElement).blur();const active=document.querySelector('.receipt-stepper .active');const stepper=active?.parentElement;if(!(active instanceof HTMLElement)||!stepper)return;if(stepper.contains(document.activeElement))(document.activeElement as HTMLElement).blur();stepper.scrollTo({left:active.offsetLeft-(stepper.clientWidth-active.clientWidth)/2,behavior:'smooth'})},[editStep,editing])
-  useEffect(()=>{
-    if(!editing||!window.matchMedia('(max-width: 560px)').matches)return
-    const editor=document.querySelector('.receipt-result.editing')
-    if(!editor)return
-    const modal=editor.closest('.modal-card')
-    const viewport=window.visualViewport
-    let returnScrollTop=modal?.scrollTop??0
-    let focusedViewportHeight=viewport?.height??window.innerHeight
-    let restoreTimer:number|undefined
-    editor.querySelectorAll('input:not([type="date"])').forEach(input=>input.setAttribute('enterkeyhint','done'))
-    const restoreForm=()=>{
-      window.clearTimeout(restoreTimer)
-      restoreTimer=window.setTimeout(()=>{
-        if(modal)modal.scrollTo({top:returnScrollTop,behavior:'smooth'})
-      },120)
-    }
-    const finishField=(target:HTMLInputElement|HTMLSelectElement)=>{target.blur();restoreForm()}
-    const focusField=(event:Event)=>{
-      const target=event.target
-      if(!(target instanceof HTMLInputElement||target instanceof HTMLSelectElement))return
-      returnScrollTop=modal?.scrollTop??0
-      focusedViewportHeight=viewport?.height??window.innerHeight
-      window.setTimeout(()=>target.closest('label')?.scrollIntoView({behavior:'smooth',block:'nearest'}),180)
-    }
-    const leaveField=(event:Event)=>{
-      const next=event instanceof FocusEvent?event.relatedTarget:null
-      if(!(next instanceof HTMLInputElement||next instanceof HTMLSelectElement)||!editor.contains(next))restoreForm()
-    }
-    const finishWithKeyboard=(event:Event)=>{if(!(event instanceof KeyboardEvent)||event.key!=='Enter'||!(event.target instanceof HTMLInputElement))return;event.preventDefault();finishField(event.target)}
-    const finishPicker=(event:Event)=>{const target=event.target;if(target instanceof HTMLSelectElement||target instanceof HTMLInputElement&&target.type==='date')window.setTimeout(()=>finishField(target),80)}
-    const finishWhenKeyboardCloses=()=>{
-      const active=document.activeElement
-      if(!(active instanceof HTMLInputElement||active instanceof HTMLSelectElement)||!editor.contains(active))return
-      const currentHeight=viewport?.height??window.innerHeight
-      if(currentHeight>focusedViewportHeight+80)finishField(active)
-    }
-    editor.addEventListener('focusin',focusField);editor.addEventListener('focusout',leaveField);editor.addEventListener('keydown',finishWithKeyboard);editor.addEventListener('change',finishPicker);viewport?.addEventListener('resize',finishWhenKeyboardCloses)
-    return()=>{window.clearTimeout(restoreTimer);editor.removeEventListener('focusin',focusField);editor.removeEventListener('focusout',leaveField);editor.removeEventListener('keydown',finishWithKeyboard);editor.removeEventListener('change',finishPicker);viewport?.removeEventListener('resize',finishWhenKeyboardCloses)}
-  },[editing,editStep])
+  useEffect(()=>{if(!editing)return;const active=document.querySelector('.receipt-stepper .active');const stepper=active?.parentElement;if(!(active instanceof HTMLElement)||!stepper)return;stepper.scrollTo({left:active.offsetLeft-(stepper.clientWidth-active.clientWidth)/2,behavior:'smooth'})},[editStep,editing])
   async function parse(acceptLowQuality=false){if(!file)return;setLoading(true);setError('');try{const parsed=await api.parseReceipt(householdId,file,token,acceptLowQuality);setQualityWarning(undefined);setResult(parsed);setOriginal(structuredClone(parsed));setEditing(false);setEditStep(0)}catch(err){if(err instanceof ApiError&&err.status===422&&err.code==='receipt_image_quality_insufficient'&&err.imageQuality)setQualityWarning(err.imageQuality);else setError(err instanceof ApiError?err.message:'Não foi possível analisar o talão.')}finally{setLoading(false)}}
   function chooseAnotherFile(){setFile(undefined);setQualityWarning(undefined);setError('');if(inputRef.current)inputRef.current.value=''}
   function updateLine(index:number,line:ReceiptParseLine){if(!result)return;setResult({...result,lines:result.lines.map((item,itemIndex)=>itemIndex===index?line:item)})}

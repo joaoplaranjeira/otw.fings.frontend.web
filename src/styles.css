@@ -326,17 +326,6 @@
   .receipt-result.editing .receipt-edit-grid label>.receipt-money-input{height:36px;margin:0;border:0;background:transparent;justify-content:flex-end;box-shadow:none}
   .receipt-result.editing .receipt-edit-header label>.receipt-money-input input,
   .receipt-result.editing .receipt-edit-grid label>.receipt-money-input input{width:min(150px,100%);height:34px!important;text-align:right;font-weight:700}
-  .receipt-result.editing .receipt-edit-header label:focus-within,
-  .receipt-result.editing .receipt-edit-grid label:focus-within{border-color:#8c7cff;background:#f9f8ff;box-shadow:0 0 0 2px #6d5dfc14;color:#4c4c57}
-  .receipt-result.editing .receipt-edit-header label:focus-within>input,
-  .receipt-result.editing .receipt-edit-header label:focus-within>select,
-  .receipt-result.editing .receipt-edit-grid label:focus-within>input,
-  .receipt-result.editing .receipt-edit-grid label:focus-within>select{height:34px;margin:0;border:0;background:transparent;padding:0;text-align:right;text-align-last:right;font-weight:700}
-  .receipt-result.editing .receipt-edit-header label:focus-within>.receipt-money-input,
-  .receipt-result.editing .receipt-edit-grid label:focus-within>.receipt-money-input{height:36px;margin:0;border:0;background:transparent;justify-content:flex-end;box-shadow:none}
-  .receipt-result.editing .receipt-edit-header label:focus-within>.receipt-money-input input,
-  .receipt-result.editing .receipt-edit-grid label:focus-within>.receipt-money-input input{width:min(150px,100%);height:34px!important;text-align:right;font-weight:700}
   .receipt-result.editing .receipt-total-field{padding:7px 11px;background:#f4f2ff;color:#5e4fed!important}
-  .receipt-result.editing .receipt-total-field:focus-within{background:#f9f8ff;color:#4c4c57!important}
   .receipt-result.editing .receipt-line-editor{padding:9px}
 }
