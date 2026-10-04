@@ -1,12 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
-  ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Bell, CalendarDays, Camera, Check,
-  ChevronDown, ChevronRight, CircleHelp, CreditCard, FileText, Grid2X2, Home, Landmark,
+  ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Bell, CalendarDays, Camera, Check, Copy,
+  ChevronDown, ChevronRight, CircleHelp, CreditCard, FileText, Grid2X2, Home, Landmark, Link2, Mail,
   LayoutDashboard, LoaderCircle, LogOut, Menu, MoreHorizontal, Plus, ReceiptText,
   Pencil, Play, RefreshCw, Repeat2, Search, Settings, ShieldCheck, ShoppingBasket, Sparkles, Tags, Trash2, TrendingDown, TrendingUp,
   TriangleAlert, Upload, UserPlus, UserRound, UsersRound, Utensils, WalletCards, X,
 } from 'lucide-react'
-import { api, ApiError, type Budget, type Category, type Dashboard, type Expense, type ExpensePayloadLine, type Household, type HouseholdMember, type HouseholdRole, type ReceiptImageQuality, type ReceiptParseLine, type ReceiptParseResult, type RecurringExpense, type RecurringExpenseMaterialization, type User } from './api'
+import { api, ApiError, type Budget, type Category, type Dashboard, type Expense, type ExpensePayloadLine, type Household, type HouseholdInvitation, type HouseholdInvitationPreview, type HouseholdMember, type HouseholdRole, type ReceiptImageQuality, type ReceiptParseLine, type ReceiptParseResult, type RecurringExpense, type RecurringExpenseMaterialization, type User } from './api'
 
 type View = 'overview' | 'expenses' | 'budgets' | 'recurring' | 'settings'
 type Modal = 'expense' | 'receipt' | 'budget' | null
@@ -67,26 +67,45 @@ function PoweredBy({ className = '' }: { className?: string }) {
   return <footer className={`powered-by ${className}`.trim()}>powered by <a href="https://www.othub.pt" target="_blank" rel="noreferrer" aria-label="OTW, Lda. — www.othub.pt">OTW, Lda.</a></footer>
 }
 
+function invitationCodeFromUrl(){return new URLSearchParams(window.location.search).get('invitationCode')?.trim().toUpperCase()||''}
+function clearInvitationFromUrl(){const url=new URL(window.location.href);url.searchParams.delete('invitationCode');window.history.replaceState({},'',`${url.pathname}${url.search}${url.hash}`)}
+
 function Auth({ onAuthenticated }: { onAuthenticated: (token: string) => void }) {
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const initialInvitationCode=invitationCodeFromUrl()
+  const [mode, setMode] = useState<'login' | 'register'>(initialInvitationCode?'register':'login')
   const [step, setStep] = useState<'email' | 'code'>('email')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
+  const [invitationFlow,setInvitationFlow]=useState(!!initialInvitationCode)
+  const [invitationCode,setInvitationCode]=useState(initialInvitationCode)
+  const [invitation,setInvitation]=useState<HouseholdInvitationPreview>()
+  const [invitationLoading,setInvitationLoading]=useState(false)
+  const [invitationError,setInvitationError]=useState('')
+  const [registeredWithInvitation,setRegisteredWithInvitation]=useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({ name: '', username: '', householdName: '' })
+
+  useEffect(()=>{
+    if(!invitationCode){setInvitation(undefined);setInvitationError('');return}
+    if(invitationCode.length<8){setInvitation(undefined);setInvitationError('');return}
+    const timer=window.setTimeout(()=>{setInvitationLoading(true);setInvitationError('');api.householdInvitation(invitationCode).then(setInvitation).catch(reason=>{setInvitation(undefined);setInvitationError(reason instanceof ApiError&&reason.status===410?'Este convite expirou ou foi revogado.':reason instanceof ApiError&&reason.status===409?'Este convite já foi utilizado.':'Não foi possível validar este código de convite.')}).finally(()=>setInvitationLoading(false))},350)
+    return()=>window.clearTimeout(timer)
+  },[invitationCode])
 
   async function submit(e: FormEvent) {
     e.preventDefault(); setError(''); setLoading(true)
     try {
       if (mode === 'register') {
-        await api.register({ ...form, email })
+        await api.register({ name:form.name.trim(),username:form.username.trim(),email:email.trim(),...(invitationFlow?{invitationCode}:{householdName:form.householdName.trim()}) })
+        if(invitationFlow){setRegisteredWithInvitation(true);clearInvitationFromUrl()}
         await api.sendOtp(email)
         setMode('login'); setStep('code')
       } else if (step === 'email') {
         await api.sendOtp(email); setStep('code')
       } else {
         const result = await api.validateOtp(email, code)
+        if(invitationFlow&&!registeredWithInvitation){await api.acceptHouseholdInvitation(invitationCode,result.token);clearInvitationFromUrl()}
         onAuthenticated(result.token)
       }
     } catch (err) {
@@ -115,20 +134,23 @@ function Auth({ onAuthenticated }: { onAuthenticated: (token: string) => void })
       <div className="auth-mobile-logo"><Logo /></div>
       <div className="auth-box">
         {step === 'code' && <button className="back-link" onClick={() => setStep('email')}><ArrowLeft size={16} /> Voltar</button>}
-        <span className="auth-kicker">{mode === 'register' ? 'COMEÇA AGORA' : step === 'email' ? 'BEM-VINDO DE VOLTA' : 'VERIFICA O TEU EMAIL'}</span>
+        <span className="auth-kicker">{invitationFlow&&step==='email'?'CONVITE PARA A FAMÍLIA':mode === 'register' ? 'COMEÇA AGORA' : step === 'email' ? 'BEM-VINDO DE VOLTA' : 'VERIFICA O TEU EMAIL'}</span>
         <h2>{mode === 'register' ? 'Cria a tua conta' : step === 'email' ? 'Entra na Fings' : 'Introduz o código'}</h2>
-        <p className="auth-sub">{step === 'code' ? <>Enviámos um código de 6 dígitos para <strong>{email}</strong>.</> : mode === 'register' ? 'A tua casa financeira, pronta em menos de um minuto.' : 'Usamos um código seguro — não precisas de palavra-passe.'}</p>
+        <p className="auth-sub">{step === 'code' ? <>Enviámos um código de 6 dígitos para <strong>{email}</strong>.</> : invitation?<>Foste convidado para <strong>{invitation.householdName}</strong>. Usa o email indicado no convite.</>:mode === 'register' ? 'A tua casa financeira, pronta em menos de um minuto.' : 'Usamos um código seguro — não precisas de palavra-passe.'}</p>
+        {invitationFlow&&step==='email'&&<aside className={`auth-invitation ${invitationError?'invalid':''}`}><span>{invitationLoading?<LoaderCircle className="spin"/>:<Mail/>}</span><div><small>CÓDIGO DO CONVITE</small><strong>{invitationLoading?'A validar…':invitation?.householdName||'Convite não validado'}</strong>{invitation&&<p>{invitation.maskedEmail} · {roleLabel((['','Owner','Administrator','Member','Viewer'])[invitation.role])}</p>}{invitationError&&<p>{invitationError}</p>}</div></aside>}
         <form onSubmit={submit}>
           {mode === 'register' && <>
             <label>Nome completo<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="João Santos" /></label>
-            <div className="input-pair"><label>Username<input required value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="joao.santos" /></label><label>Nome do agregado<input required value={form.householdName} onChange={e => setForm({ ...form, householdName: e.target.value })} placeholder="Família Santos" /></label></div>
+            <div className="input-pair"><label>Username<input required value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="joao.santos" /></label>{!invitationFlow&&<label>Nome do agregado<input required value={form.householdName} onChange={e => setForm({ ...form, householdName: e.target.value })} placeholder="Família Santos" /></label>}</div>
           </>}
+          {invitationFlow&&step==='email'&&<label>Código do convite<input required autoCapitalize="characters" value={invitationCode} onChange={e=>setInvitationCode(e.target.value.trim().toUpperCase())} placeholder="FINGS-XXXX-XXXX"/></label>}
           {step === 'email' ? <label>Email<input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="nome@email.pt" /></label> : <label>Código de acesso<input className="otp-input" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} placeholder="• • • • • •" /></label>}
           {error && <div className="form-error">{error}</div>}
-          <button className="primary-button full" disabled={loading}>{loading ? <LoaderCircle className="spin" size={18} /> : step === 'code' ? 'Confirmar e entrar' : mode === 'register' ? 'Criar conta' : 'Receber código'}{!loading && <ArrowRight size={17} />}</button>
+          <button className="primary-button full" disabled={loading||invitationFlow&&(!invitation||invitationLoading)}>{loading ? <LoaderCircle className="spin" size={18} /> : step === 'code' ? 'Confirmar e entrar' : mode === 'register' ? invitationFlow?'Criar conta e entrar na família':'Criar conta' : 'Receber código'}{!loading && <ArrowRight size={17} />}</button>
         </form>
         {step === 'email' && <>
           <p className="auth-switch">{mode === 'login' ? 'Ainda não tens conta?' : 'Já tens conta?'} <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError('') }}>{mode === 'login' ? 'Criar conta' : 'Entrar'}</button></p>
+          <button type="button" className="auth-invite-entry" onClick={()=>{if(invitationFlow){setInvitationFlow(false);setInvitationCode('');setInvitation(undefined);setInvitationError('');setMode('login')}else{setInvitationFlow(true);setMode('register')}setError('')}}>{invitationFlow?<><ArrowLeft/> Continuar sem convite</>:<><Mail/> Tenho um código de convite</>}</button>
         </>}
         <div className="auth-mobile-proof"><ShieldCheck size={15}/><span>Finanças claras para toda a família</span></div>
       </div>
@@ -179,7 +201,7 @@ function Topbar({ user, household, households, setHousehold, onMenu, onLogout }:
           <div className="profile-dropdown-head"><strong>{user.name}</strong><small>{user.email}</small></div>
           <div className="profile-dropdown-label">Alterar conta</div>
           {households.map(item => <button key={item.id} role="menuitemradio" aria-checked={item.id === household?.id} onClick={() => { setHousehold(item); setProfileOpen(false) }}><span className="profile-option-avatar">{item.name.slice(0, 2).toUpperCase()}</span><span><strong>{item.name}</strong><small>{item.role === 1 ? 'Owner' : 'Membro'}</small></span>{item.id === household?.id && <Check size={16} />}</button>)}
-          <button className="profile-logout" role="menuitem" onClick={() => onLogout ? onLogout() : window.dispatchEvent(new Event('fings:unauthorized'))}><LogOut size={16} /> Terminar sessão</button>
+          <button className="profile-logout" role="menuitem" onClick={() => onLogout ? onLogout() : window.dispatchEvent(new Event('fings:unauthorized'))}><span className="profile-logout-icon"><LogOut size={15}/></span><span className="profile-logout-copy"><strong>Terminar sessão</strong><small>Sair desta conta em segurança</small></span></button>
         </div>}
       </div>
     </div>
@@ -215,7 +237,7 @@ function BalanceChart({dashboard,expenses}:{dashboard:Dashboard;expenses:Expense
   return <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-labelledby="balance-chart-title balance-chart-description"><title id="balance-chart-title">Evolução diária do saldo disponível</title><desc id="balance-chart-description">O saldo começou em {euro.format(dashboard.budget)} e está em {euro.format(points.at(-1)?.value??dashboard.budget)} no dia {lastDay}.</desc><defs><linearGradient id="balance-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7565fc" stopOpacity=".24"/><stop offset="100%" stopColor="#7565fc" stopOpacity=".02"/></linearGradient></defs><line className="balance-grid-line" x1={left} y1={bottom} x2={right} y2={bottom}/><path className="balance-area" d={areaPath}/><path className="balance-line" d={linePath}/>{expensePoints.map(point=><circle className="balance-expense-point" key={point.day} cx={x(point.day)} cy={y(point.value)} r="3"><title>Dia {point.day}: {euro.format(point.value)} disponíveis após {euro.format(point.spent)} em despesas</title></circle>)}<circle className="balance-current-point-halo" cx={x(lastDay)} cy={y(points.at(-1)?.value??dashboard.budget)} r="7"/><circle className="balance-current-point" cx={x(lastDay)} cy={y(points.at(-1)?.value??dashboard.budget)} r="3.5"><title>Saldo disponível: {euro.format(points.at(-1)?.value??dashboard.budget)}</title></circle>{labelDays.map(day=><text className="balance-axis-label" key={day} x={x(day)} y="105" textAnchor={day===1?'start':day===lastDay?'end':'middle'}>{day}</text>)}</svg>
 }
 
-function Overview({ dashboard, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh }: { dashboard?: Dashboard; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void }) {
+function Overview({ dashboard, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh, onCategorySelect }: { dashboard?: Dashboard; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void; onCategorySelect:(categoryId:string)=>void }) {
   const pct = dashboard?.budget ? Math.min(100, dashboard.confirmedExpenses / dashboard.budget * 100) : null
   const savingRate=dashboard?.plannedIncome ? (dashboard.plannedIncome-dashboard.confirmedExpenses)/dashboard.plannedIncome*100 : null
   const dashboardCategories=dashboard?.categories||[]
@@ -243,7 +265,7 @@ function Overview({ dashboard, expenses, categories, user, periodLabel, changePe
     <section className="lower-grid">
       <div className="panel spending-panel">
         <div className="panel-head"><div><h3>Despesas por categoria</h3><p>Onde estás a gastar este mês</p></div><button className="more-button"><MoreHorizontal /></button></div>
-        {dashboardCategories.length?<div className="bar-chart">{dashboardCategories.slice(0, 5).map((c, i) => { const cat = categories.find(x => x.id === c.categoryId); return <div className="bar-column" key={c.categoryId}><div className="bar-value">{compactEuro.format(c.spent)}</div><div className="bar-track"><div style={{ height: `${Math.max(12, c.spent / maxBar * 100)}%`, background: cat?.color || ['#6d5dfc','#ff9f43','#2ec4b6','#ff5c8a'][i] }} /></div><span>{c.categoryName}</span></div>})}</div>:<DataUnavailable message="Ainda não existem despesas categorizadas neste período."/>}
+        {dashboardCategories.length?<div className="bar-chart">{dashboardCategories.slice(0, 5).map((c, i) => { const cat = categories.find(x => x.id === c.categoryId); return <button type="button" className="bar-column" key={c.categoryId} aria-label={`Ver movimentos da categoria ${c.categoryName}`} onClick={()=>onCategorySelect(c.categoryId)}><div className="bar-value">{compactEuro.format(c.spent)}</div><div className="bar-track"><div style={{ height: `${Math.max(12, c.spent / maxBar * 100)}%`, background: cat?.color || ['#6d5dfc','#ff9f43','#2ec4b6','#ff5c8a'][i] }} /></div><span>{c.categoryName}</span></button>})}</div>:<DataUnavailable message="Ainda não existem despesas categorizadas neste período."/>}
       </div>
       <div className="panel transactions-panel">
         <div className="panel-head"><div><h3>Movimentos recentes</h3><p>As últimas despesas registadas</p></div><button className="text-button" onClick={() => setView('expenses')}>Ver todos <ChevronRight size={15} /></button></div>
@@ -268,10 +290,12 @@ function ExpenseLinesPanel({expense,categories,onEdit}:{expense:Expense;categori
   return <section className="expense-detail"><header className="expense-detail-hero"><div className="expense-detail-identity"><span><ReceiptText size={20}/></span><div><small>DETALHE DO MOVIMENTO</small><h3>{expense.merchantName||expense.description}</h3><p>{formatDate(expense.date)} · {origin}</p></div></div><div className="expense-detail-actions"><button type="button" onClick={()=>onEdit(expense)}><Pencil size={14}/> Editar despesa</button><div className="expense-detail-total"><small>VALOR TOTAL</small><strong>{euro.format(expense.amount)}</strong><span><Check size={12}/> {expense.lines.length} parcela{expense.lines.length===1?'':'s'} conciliada{expense.lines.length===1?'':'s'}</span></div></div></header><div className="expense-detail-body"><section className="expense-distribution"><div className="expense-detail-section-title"><div><span>Distribuição</span><strong>Onde foi aplicado o valor</strong></div><small>{distribution.length} categoria{distribution.length===1?'':'s'}</small></div><div className="expense-distribution-bar" aria-label="Distribuição do valor por categoria">{distribution.map(item=><i key={item.id} title={`${item.name}: ${euro.format(item.amount)}`} style={{width:`${item.amount/expense.amount*100}%`,background:item.color}}/>)}</div><div className="expense-distribution-legend">{distribution.map(item=><div key={item.id}><i style={{background:item.color}}/><span>{item.name}</span><strong>{euro.format(item.amount)}</strong><small>{Math.round(item.amount/expense.amount*100)}%</small></div>)}</div></section><section className="expense-installments"><div className="expense-detail-section-title"><div><span>Parcelas</span><strong>Composição da despesa</strong></div><small>{expense.lines.length} item{expense.lines.length===1?'':'s'}</small></div><div className="expense-installment-list">{expense.lines.map((line,index)=>{const color=categories.find(category=>category.id===line.categoryId)?.color||'#6d5dfc';return <article className="expense-installment" key={line.id}><span className="expense-installment-index">{String(index+1).padStart(2,'0')}</span><div className="expense-installment-main"><strong>{line.description}</strong><span><i style={{background:color}}/>{line.categoryName}{line.subcategoryName&&<em>{line.subcategoryName}</em>}</span></div><div className="expense-installment-math">{line.quantity!=null&&<small>QTD. {line.quantity}</small>}{line.unitPrice!=null&&<span>{line.quantity!=null?'× ':''}{euro.format(line.unitPrice)}</span>}{line.quantity==null&&line.unitPrice==null&&<small>VALOR DIRETO</small>}</div><strong className="expense-installment-amount">{euro.format(line.amount)}</strong></article>})}</div></section></div></section>
 }
 
-function ExpensesPage({ expenses, categories, periodLabel, loading, changePeriod, openModal, onEdit }: { expenses: Expense[]; categories: Category[]; periodLabel:string; loading:boolean; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; onEdit:(expense:Expense)=>void }) {
+function ExpensesPage({ expenses, categories, periodLabel, loading, changePeriod, openModal, onEdit, selectedCategoryId, onCategoryChange }: { expenses: Expense[]; categories: Category[]; periodLabel:string; loading:boolean; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; onEdit:(expense:Expense)=>void; selectedCategoryId?:string; onCategoryChange:(categoryId?:string)=>void }) {
   const [search, setSearch] = useState('')
   const [expandedExpenseId,setExpandedExpenseId]=useState<string>()
-  const shown = expenses.filter(e => `${e.description} ${e.merchantName} ${e.categoryName} ${e.lines?.map(line=>`${line.description} ${line.categoryName} ${line.subcategoryName||''}`).join(' ')||''}`.toLowerCase().includes(search.toLowerCase()))
+  const monthCategories=useMemo(()=>categories.filter(category=>expenses.some(expense=>expense.categoryId===category.id||expense.lines?.some(line=>line.categoryId===category.id))).map(category=>({...category,count:expenses.filter(expense=>expense.categoryId===category.id||expense.lines?.some(line=>line.categoryId===category.id)).length})),[categories,expenses])
+  const shown = expenses.filter(e => (!selectedCategoryId||e.categoryId===selectedCategoryId||e.lines?.some(line=>line.categoryId===selectedCategoryId))&&`${e.description} ${e.merchantName} ${e.categoryName} ${e.lines?.map(line=>`${line.description} ${line.categoryName} ${line.subcategoryName||''}`).join(' ')||''}`.toLowerCase().includes(search.toLowerCase()))
+  const filtersActive=!!selectedCategoryId||!!search.trim()
   const monthTotal=expenses.reduce((sum,expense)=>sum+(Number.isFinite(expense.amount)?expense.amount:0),0)
   return <>
     <div className="page-heading">
@@ -283,7 +307,8 @@ function ExpensesPage({ expenses, categories, periodLabel, loading, changePeriod
         <div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar movimentos" /></div>
         <div className="movement-toolbar-summary"><div className="movement-month-total"><span>Total do mês</span><strong>{loading?'—':euro.format(monthTotal)}</strong></div><MonthNavigator label={periodLabel} onChange={changePeriod}/></div>
       </div>
-      <div className="expense-table"><div className="table-row table-header"><span>Movimento</span><span>Data</span><span>Origem</span><span>Valor</span><span /></div>{loading?<div className="movement-loading"><LoaderCircle className="spin"/><span>A carregar movimentos de {periodLabel}…</span></div>:shown.length?shown.map(e => {const expanded=expandedExpenseId===e.id;return <Fragment key={e.id}><div className={`table-row ${expanded?'expanded':''}`}><span><Transaction expense={e} categories={categories}/></span><span>{formatDate(e.date)}</span><span><i className="origin-pill">{e.origin === 1 ? 'Manual' : e.origin === 2 ? 'Recorrente' : 'Talão'}</i></span><strong>− {euro.format(e.amount)}</strong><button className="expense-lines-toggle" aria-label={`${expanded?'Ocultar':'Ver'} parcelas de ${e.description}`} title={expanded?'Ocultar parcelas':'Ver parcelas'} aria-expanded={expanded} onClick={()=>setExpandedExpenseId(expanded?undefined:e.id)}>{expanded?<ChevronDown size={17}/>:<ChevronRight size={17}/>}</button></div>{expanded&&<ExpenseLinesPanel expense={e} categories={categories} onEdit={onEdit}/>}</Fragment>}):<DataUnavailable message={`Ainda não existem movimentos em ${periodLabel}.`}/>}</div>
+      {!loading&&monthCategories.length>0&&<nav className="movement-category-shortcuts" aria-label="Filtrar movimentos por categoria"><span>Categorias deste mês</span><div><button type="button" className={!selectedCategoryId?'active':''} aria-pressed={!selectedCategoryId} onClick={()=>onCategoryChange(undefined)}>Todas <small>{expenses.length}</small></button>{monthCategories.map(category=><button type="button" key={category.id} className={selectedCategoryId===category.id?'active':''} aria-pressed={selectedCategoryId===category.id} onClick={()=>onCategoryChange(selectedCategoryId===category.id?undefined:category.id)}><i style={{background:category.color||'#6d5dfc'}}/>{category.name}<small>{category.count}</small></button>)}</div></nav>}
+      <div className="expense-table"><div className="table-row table-header"><span>Movimento</span><span>Data</span><span>Origem</span><span>Valor</span><span /></div>{loading?<div className="movement-loading"><LoaderCircle className="spin"/><span>A carregar movimentos de {periodLabel}…</span></div>:shown.length?shown.map(e => {const expanded=expandedExpenseId===e.id;return <Fragment key={e.id}><div className={`table-row ${expanded?'expanded':''}`}><span><Transaction expense={e} categories={categories}/></span><span>{formatDate(e.date)}</span><span><i className="origin-pill">{e.origin === 1 ? 'Manual' : e.origin === 2 ? 'Recorrente' : 'Talão'}</i></span><strong>− {euro.format(e.amount)}</strong><button className="expense-lines-toggle" aria-label={`${expanded?'Ocultar':'Ver'} parcelas de ${e.description}`} title={expanded?'Ocultar parcelas':'Ver parcelas'} aria-expanded={expanded} onClick={()=>setExpandedExpenseId(expanded?undefined:e.id)}>{expanded?<ChevronDown size={17}/>:<ChevronRight size={17}/>}</button></div>{expanded&&<ExpenseLinesPanel expense={e} categories={categories} onEdit={onEdit}/>}</Fragment>}):<DataUnavailable message={filtersActive?'Nenhum movimento corresponde aos filtros selecionados.':`Ainda não existem movimentos em ${periodLabel}.`}/>}</div>
     </div>
   </>
 }
@@ -472,7 +497,7 @@ function memberErrorMessage(error: unknown, operation: 'add'|'remove'|'load') {
 
 function roleLabel(name?:string){return ({Owner:'Proprietário',Administrator:'Administrador',Member:'Membro',Viewer:'Leitor'} as Record<string,string>)[name||'']||name||'Papel desconhecido'}
 
-function HouseholdMembersSettings({ user, household, token }: { user:User; household:Household; token:string }) {
+function LegacyHouseholdMembersSettings({ user, household, token }: { user:User; household:Household; token:string }) {
   const [members,setMembers]=useState<HouseholdMember[]>([]);const [roles,setRoles]=useState<HouseholdRole[]>([]);const [loading,setLoading]=useState(true);const [adding,setAdding]=useState(false);const [saving,setSaving]=useState(false);const [removingId,setRemovingId]=useState('');const [email,setEmail]=useState('');const [role,setRole]=useState('');const [error,setError]=useState('');const [success,setSuccess]=useState('')
   const currentRoleName=roles.find(item=>item.value===household.role)?.name
   const canManage=currentRoleName==='Owner'||currentRoleName==='Administrator'
@@ -487,6 +512,57 @@ function HouseholdMembersSettings({ user, household, token }: { user:User; house
 
   if(loading)return <div className="members-loading"><LoaderCircle className="spin"/><span>A carregar membros do agregado…</span></div>
   return <div className="members-settings-view"><div className="settings-section-toolbar members-toolbar"><div><span className="settings-stat">{members.length}</span><span>membro{members.length===1?'':'s'} em {household.name}</span></div>{canManage&&<button className="primary-button" onClick={()=>{setAdding(true);setError('');setSuccess('')}} disabled={adding}><UserPlus size={16}/> Adicionar membro</button>}</div>{error&&<div className="form-error members-feedback">{error}</div>}{success&&<div className="form-success members-feedback"><Check size={15}/>{success}</div>}{adding&&<form className="member-add-card" onSubmit={addMember}><div className="category-setting-title"><div><strong>Adicionar membro</strong><small>O utilizador deve já estar registado e ativo na Fings.</small></div><button type="button" aria-label="Cancelar" onClick={()=>{setAdding(false);setError('')}}><X size={16}/></button></div><div className="member-add-form"><label>Email<input autoFocus required type="email" value={email} onChange={event=>setEmail(event.target.value)} placeholder="nome@email.pt"/></label><label>Papel<select required value={role} onChange={event=>setRole(event.target.value)}>{availableRoles.map(item=><option key={item.value} value={item.value}>{roleLabel(item.name)}</option>)}</select></label><button className="primary-button" disabled={saving||!role}>{saving?<LoaderCircle className="spin"/>:<UserPlus/>}{saving?'A adicionar…':'Adicionar'}</button></div></form>}<section className="members-list" aria-label="Membros do agregado">{members.map(member=>{const memberRole=roles.find(item=>item.value===member.role);const ownMember=member.userId===user.id;return <article className="member-row" key={member.id}><span className="member-avatar">{initials(member.name)}</span><div className="member-identity"><div><strong>{member.name}</strong>{ownMember&&<span className="member-you">Tu</span>}</div><small>@{member.username} · {member.email}</small></div><span className={`member-role role-${memberRole?.name.toLowerCase()||'unknown'}`}>{roleLabel(memberRole?.name)}</span><span className={`member-status ${member.isActive?'active':''}`}><i/>{member.isActive?'Ativo':'Inativo'}</span>{canRemove(member)?<button className="member-remove" aria-label={`Remover ${member.name}`} onClick={()=>removeMember(member)} disabled={removingId===member.id}>{removingId===member.id?<LoaderCircle className="spin"/>:<Trash2/>}<span>Remover</span></button>:<span className="member-action-space"/>}</article>})}{!members.length&&<DataUnavailable message="Este agregado ainda não tem membros."/>}</section></div>
+}
+
+function invitationErrorMessage(error:unknown){
+  if(!(error instanceof ApiError))return 'Não foi possível concluir a operação com o convite.'
+  if(error.status===403)return 'Não tens permissão para gerir este convite ou atribuir este papel.'
+  if(error.status===404)return 'O convite já não existe.'
+  if(error.status===409)return 'Este email já pertence à família ou já tem um convite pendente.'
+  if(error.status===410)return 'Este convite expirou ou foi revogado.'
+  if(error.status===422)return 'Confirma o email e o papel selecionado.'
+  return error.message
+}
+
+function HouseholdMembersSettings({ user, household, token }: { user:User; household:Household; token:string }) {
+  const [members,setMembers]=useState<HouseholdMember[]>([])
+  const [roles,setRoles]=useState<HouseholdRole[]>([])
+  const [invitations,setInvitations]=useState<HouseholdInvitation[]>([])
+  const [creating,setCreating]=useState(false)
+  const [sharing,setSharing]=useState<HouseholdInvitation>()
+  const [loading,setLoading]=useState(true)
+  const [saving,setSaving]=useState(false)
+  const [actionId,setActionId]=useState('')
+  const [removingId,setRemovingId]=useState('')
+  const [email,setEmail]=useState('')
+  const [role,setRole]=useState('')
+  const [copied,setCopied]=useState<'code'|'link'>()
+  const [error,setError]=useState('')
+  const [success,setSuccess]=useState('')
+  const canManage=household.role===1||household.role===2
+  const currentRoleName=roles.find(item=>item.value===household.role)?.name
+  const availableRoles=useMemo(()=>currentRoleName==='Administrator'?roles.filter(item=>item.name==='Member'||item.name==='Viewer'):roles,[currentRoleName,roles])
+
+  useEffect(()=>{let active=true;setLoading(true);setError('');Promise.all([api.householdRoles(token),api.householdMembers(household.id,token),canManage?api.householdInvitations(household.id,token):Promise.resolve([])]).then(([nextRoles,nextMembers,nextInvitations])=>{if(!active)return;setRoles(nextRoles);setMembers(nextMembers);setInvitations(nextInvitations)}).catch(reason=>{if(active)setError(memberErrorMessage(reason,'load'))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[canManage,household.id,token])
+  useEffect(()=>{if(!availableRoles.some(item=>String(item.value)===role))setRole(availableRoles[0]?String(availableRoles[0].value):'')},[availableRoles,role])
+
+  async function createInvitation(event:FormEvent){event.preventDefault();if(!role)return;setSaving(true);setError('');setSuccess('');try{const created=await api.createHouseholdInvitation(household.id,{email:email.trim(),role:Number(role)},token);setInvitations(current=>[created,...current]);setSharing(created);setCreating(false);setEmail('');setSuccess('Convite criado. Partilha o código ou envia-o por email.')}catch(reason){setError(invitationErrorMessage(reason))}finally{setSaving(false)}}
+  async function sendEmail(invitation:HouseholdInvitation){setActionId(invitation.id);setError('');setSuccess('');try{const result=await api.sendHouseholdInvitationEmail(household.id,invitation.id,token);setInvitations(current=>current.map(item=>item.id===invitation.id?{...item,emailSent:result.emailSent}:item));setSharing(current=>current?.id===invitation.id?{...current,emailSent:result.emailSent}:current);if(result.emailSent)setSuccess(`Convite enviado para ${result.email}.`);else setError('O convite continua válido, mas o email não foi entregue. Tenta novamente ou partilha o link por outro canal.')}catch(reason){setError(invitationErrorMessage(reason))}finally{setActionId('')}}
+  async function regenerate(invitation:HouseholdInvitation){setActionId(invitation.id);setError('');setSuccess('');try{const renewed=await api.regenerateHouseholdInvitation(household.id,invitation.id,token);setInvitations(current=>current.map(item=>item.id===invitation.id?renewed:item));setSharing(renewed);setSuccess('Foi criado um novo código. O código anterior deixou de funcionar.')}catch(reason){setError(invitationErrorMessage(reason))}finally{setActionId('')}}
+  async function revoke(invitation:HouseholdInvitation){if(!window.confirm(`Revogar o convite enviado para ${invitation.email}?`))return;setActionId(invitation.id);setError('');setSuccess('');try{await api.revokeHouseholdInvitation(household.id,invitation.id,token);setInvitations(current=>current.map(item=>item.id===invitation.id?{...item,status:4}:item));if(sharing?.id===invitation.id)setSharing(undefined);setSuccess('O convite foi revogado.')}catch(reason){setError(invitationErrorMessage(reason))}finally{setActionId('')}}
+  async function copySecret(kind:'code'|'link',value?:string){if(!value)return;try{await navigator.clipboard.writeText(value);setCopied(kind);window.setTimeout(()=>setCopied(undefined),1800)}catch{setError('Não foi possível copiar automaticamente. Seleciona e copia o conteúdo manualmente.')}}
+  async function removeMember(member:HouseholdMember){if(!window.confirm(`Remover ${member.name} do agregado ${household.name}?`))return;setRemovingId(member.id);setError('');setSuccess('');try{await api.removeHouseholdMember(household.id,member.id,token);setMembers(current=>current.filter(item=>item.id!==member.id));setSuccess(`${member.name} foi removido do agregado.`)}catch(reason){setError(memberErrorMessage(reason,'remove'))}finally{setRemovingId('')}}
+  function canRemove(member:HouseholdMember){if(member.userId===user.id)return false;const memberRole=roles.find(item=>item.value===member.role)?.name;return currentRoleName==='Owner'||currentRoleName==='Administrator'&&(memberRole==='Member'||memberRole==='Viewer')}
+
+  if(loading)return <div className="members-loading"><LoaderCircle className="spin"/><span>A carregar a família…</span></div>
+  return <div className="members-settings-view">
+    <div className="settings-section-toolbar members-toolbar"><div><span className="settings-stat">{members.length}</span><span>membro{members.length===1?'':'s'}</span>{canManage&&<><span className="settings-dot">·</span><span className="settings-stat">{invitations.filter(item=>item.status===1).length}</span><span>convite{invitations.filter(item=>item.status===1).length===1?'':'s'} pendente{invitations.filter(item=>item.status===1).length===1?'':'s'}</span></>}</div>{canManage&&<button className="primary-button" onClick={()=>{setCreating(true);setError('');setSuccess('')}} disabled={creating}><UserPlus size={16}/> Convidar membro</button>}</div>
+    {error&&<div className="form-error members-feedback">{error}</div>}{success&&<div className="form-success members-feedback"><Check size={15}/>{success}</div>}
+    {creating&&<form className="member-add-card invitation-create-card" onSubmit={createInvitation}><div className="category-setting-title"><div><strong>Convidar para {household.name}</strong><small>A pessoa poderá criar uma conta ou entrar com uma conta existente.</small></div><button type="button" aria-label="Cancelar" onClick={()=>{setCreating(false);setError('')}}><X size={16}/></button></div><div className="member-add-form"><label>Email do convidado<input autoFocus required type="email" value={email} onChange={event=>setEmail(event.target.value)} placeholder="nome@email.pt"/></label><label>Papel na família<select required value={role} onChange={event=>setRole(event.target.value)}>{availableRoles.map(item=><option key={item.value} value={item.value}>{roleLabel(item.name)}</option>)}</select></label><button className="primary-button" disabled={saving||!role}>{saving?<LoaderCircle className="spin"/>:<Mail/>}{saving?'A criar…':'Criar convite'}</button></div></form>}
+    {sharing&&sharing.code&&sharing.invitationUrl&&<section className="invitation-share-card" aria-live="polite"><div className="invitation-share-head"><span><Mail/></span><div><small>CONVITE PRONTO A PARTILHAR</small><h3>{sharing.email}</h3><p>{roleLabel(roles.find(item=>item.value===sharing.role)?.name)} · válido até {new Date(sharing.expiresAt).toLocaleDateString('pt-PT')}</p></div><button type="button" aria-label="Fechar" onClick={()=>setSharing(undefined)}><X/></button></div><div className="invitation-secret"><div><small>Código do convite</small><strong>{sharing.code}</strong></div><button type="button" onClick={()=>copySecret('code',sharing.code)}><Copy/>{copied==='code'?'Copiado':'Copiar'}</button></div><div className="invitation-secret link"><div><small>Link de registo</small><span>{sharing.invitationUrl}</span></div><button type="button" onClick={()=>copySecret('link',sharing.invitationUrl)}><Link2/>{copied==='link'?'Copiado':'Copiar link'}</button></div><div className="invitation-share-actions"><p><ShieldCheck/> O código é pessoal e só pode ser usado pelo email convidado.</p><button type="button" className="primary-button" disabled={actionId===sharing.id||sharing.emailSent} onClick={()=>sendEmail(sharing)}>{actionId===sharing.id?<LoaderCircle className="spin"/>:<Mail/>}{sharing.emailSent?'Email enviado':'Enviar por email'}</button></div></section>}
+    <section className="members-list" aria-label="Membros do agregado">{members.map(member=>{const memberRole=roles.find(item=>item.value===member.role);const ownMember=member.userId===user.id;return <article className="member-row" key={member.id}><span className="member-avatar">{initials(member.name)}</span><div className="member-identity"><div><strong>{member.name}</strong>{ownMember&&<span className="member-you">Tu</span>}</div><small>@{member.username} · {member.email}</small></div><span className={`member-role role-${memberRole?.name.toLowerCase()||'unknown'}`}>{roleLabel(memberRole?.name)}</span><span className={`member-status ${member.isActive?'active':''}`}><i/>{member.isActive?'Ativo':'Inativo'}</span>{canRemove(member)?<button className="member-remove" aria-label={`Remover ${member.name}`} onClick={()=>removeMember(member)} disabled={removingId===member.id}>{removingId===member.id?<LoaderCircle className="spin"/>:<Trash2/>}<span>Remover</span></button>:<span className="member-action-space"/>}</article>})}</section>
+    {canManage&&invitations.length>0&&<section className="invitations-panel"><div className="invitations-panel-head"><div><strong>Convites</strong><small>Pendentes e histórico recente</small></div></div>{invitations.map(invitation=>{const status=invitation.status===1?'Pendente':invitation.status===2?'Aceite':invitation.status===3?'Expirado':'Revogado';return <article className="invitation-row" key={invitation.id}><span className="invitation-avatar"><Mail/></span><div className="invitation-identity"><strong>{invitation.email}</strong><small>{roleLabel(roles.find(item=>item.value===invitation.role)?.name)} · expira em {new Date(invitation.expiresAt).toLocaleDateString('pt-PT')}</small></div><span className={`invitation-status status-${invitation.status}`}>{status}</span>{invitation.status===1?<div className="invitation-actions"><button type="button" title="Enviar por email" aria-label={`Enviar convite para ${invitation.email}`} onClick={()=>sendEmail(invitation)} disabled={actionId===invitation.id}><Mail/></button><button type="button" title="Gerar novo código" aria-label={`Gerar novo código para ${invitation.email}`} onClick={()=>regenerate(invitation)} disabled={actionId===invitation.id}><RefreshCw/></button><button type="button" className="danger" title="Revogar" aria-label={`Revogar convite de ${invitation.email}`} onClick={()=>revoke(invitation)} disabled={actionId===invitation.id}><X/></button></div>:<span/>}</article>})}</section>}
+  </div>
 }
 
 function SettingsPage({ user, categories, household, token, onUserUpdated, onCategoriesChanged }: { user: User; categories:Category[]; household:Household; token: string; onUserUpdated: (user: User) => void; onCategoriesChanged:(categories:Category[])=>void }) {
@@ -536,6 +612,7 @@ function App() {
   const [households,setHouseholds]=useState<Household[]>([]);const [household,setHousehold]=useState<Household>();const [categories,setCategories]=useState<Category[]>([]);const [expenses,setExpenses]=useState<Expense[]>([]);const [dashboard,setDashboard]=useState<Dashboard>();const [budgets,setBudgets]=useState<Budget[]>([]);const [recurring,setRecurring]=useState<RecurringExpense[]>([]);const [loading,setLoading]=useState(false);const [loadError,setLoadError]=useState('')
   const [movementExpenses,setMovementExpenses]=useState<Expense[]>([]);const [movementLoading,setMovementLoading]=useState(false)
   const [editingExpense,setEditingExpense]=useState<Expense|null>(null);const [dataRevision,setDataRevision]=useState(0);const [overviewRefreshing,setOverviewRefreshing]=useState(false)
+  const [movementCategoryId,setMovementCategoryId]=useState<string>()
   const [creatingRecurring,setCreatingRecurring]=useState(false)
   const [editingRecurring,setEditingRecurring]=useState<RecurringExpense|null>(null)
   const authenticated=!!token
@@ -544,14 +621,15 @@ function App() {
   const movementPeriodLabel=new Intl.DateTimeFormat('pt-PT',{month:'long',year:'numeric'}).format(new Date(movementPeriod.year,movementPeriod.month-1,1))
 
   useEffect(()=>{const clearSession=()=>{sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined)};window.addEventListener('fings:unauthorized',clearSession);return()=>window.removeEventListener('fings:unauthorized',clearSession)},[])
-  useEffect(()=>{if(!token)return;setLoading(true);setLoadError('');(async()=>{try{const [me,hs]=await Promise.all([api.me(token),api.households(token)]);setUser(me);setHouseholds(hs);setHousehold(hs[0])}catch(e){setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar a conta.')}finally{setLoading(false)}})()},[token])
+  useEffect(()=>{if(!token)return;setLoading(true);setLoadError('');(async()=>{try{const [me,initialHouseholds]=await Promise.all([api.me(token),api.households(token)]);setUser(me);setHouseholds(initialHouseholds);setHousehold(initialHouseholds[0]);const pendingInvitation=invitationCodeFromUrl();if(pendingInvitation){try{await api.acceptHouseholdInvitation(pendingInvitation,token);const nextHouseholds=await api.households(token);setHouseholds(nextHouseholds);setHousehold(nextHouseholds.find(item=>!initialHouseholds.some(existing=>existing.id===item.id))||nextHouseholds[0]);clearInvitationFromUrl()}catch(error){setLoadError(error instanceof ApiError?error.message:'Não foi possível aceitar o convite.')}}}catch(e){setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar a conta.')}finally{setLoading(false)}})()},[token])
   useEffect(()=>{if(!token||!household)return;setLoading(true);setLoadError('');setDashboard(undefined);const month=String(period.month).padStart(2,'0');const from=`${period.year}-${month}-01`;const to=`${period.year}-${month}-${String(new Date(period.year,period.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.categories(household.id,token),api.expenses(household.id,from,to,token),api.dashboard(household.id,period.year,period.month,token),api.budgets(household.id,token),api.recurringExpenses(household.id,token)]).then(([c,e,d,b,r])=>{setCategories(c);setExpenses(e);setDashboard(d);setBudgets(b);setRecurring(r)}).catch(e=>{setExpenses([]);setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar os dados.')}).finally(()=>setLoading(false))},[household,token,period,dataRevision])
   useEffect(()=>{if(!token||!household||view!=='expenses')return;setMovementLoading(true);const month=String(movementPeriod.month).padStart(2,'0');const from=`${movementPeriod.year}-${month}-01`;const to=`${movementPeriod.year}-${month}-${String(new Date(movementPeriod.year,movementPeriod.month,0).getDate()).padStart(2,'0')}`;api.expenses(household.id,from,to,token).then(setMovementExpenses).catch(e=>{setMovementExpenses([]);setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar os movimentos.')}).finally(()=>setMovementLoading(false))},[household,token,view,movementPeriod,dataRevision])
   const title=useMemo(()=>({overview:'Visão geral',expenses:'Movimentos',budgets:'Orçamentos',recurring:'Recorrentes',settings:'Definições'})[view],[view]);useEffect(()=>{document.title=`${title} — Fings`},[title])
   function login(t:string){sessionStorage.setItem('fings_token',t);setToken(t)}
   function logout(){sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setView('overview')}
   function changePeriod(offset:number){setPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
-  function changeMovementPeriod(offset:number){setMovementPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
+  function changeMovementPeriod(offset:number){setMovementCategoryId(undefined);setMovementPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
+  function openCategoryMovements(categoryId:string){setMovementPeriod(period);setMovementCategoryId(categoryId);setView('expenses')}
   async function refreshOverview(){
     if(!token||!household||overviewRefreshing)return
     setOverviewRefreshing(true);setLoadError('')
@@ -569,8 +647,8 @@ function App() {
       <main className="content">
         {loadError&&<div className="page-error">{loadError}</div>}
         {loading?<div className="page-loader"><LoaderCircle className="spin"/><span>A organizar as tuas finanças…</span></div>:<>
-          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={setModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview}/>}
-          {view==='expenses'&&<ExpensesPage expenses={movementExpenses} categories={categories} periodLabel={movementPeriodLabel} loading={movementLoading} changePeriod={changeMovementPeriod} openModal={setModal} onEdit={setEditingExpense}/>} 
+          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={setModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview} onCategorySelect={openCategoryMovements}/>}
+          {view==='expenses'&&<ExpensesPage expenses={movementExpenses} categories={categories} periodLabel={movementPeriodLabel} loading={movementLoading} changePeriod={changeMovementPeriod} openModal={setModal} onEdit={setEditingExpense} selectedCategoryId={movementCategoryId} onCategoryChange={setMovementCategoryId}/>}
           {view==='budgets'&&<BudgetsPage dashboard={dashboard} budgets={budgets} openModal={setModal}/>} 
           {view==='recurring'&&<RecurringPage items={recurring} categories={categories} onCreate={()=>setCreatingRecurring(true)} onEdit={setEditingRecurring} onMaterialize={async item=>{const result=await api.materializeRecurringExpense(householdId,item.id,token);setRecurring(current=>current.map(existing=>existing.id===item.id?{...existing,nextOccurrenceDate:result.nextOccurrenceDate,isActive:result.isActive}:existing));setDataRevision(current=>current+1);return result}}/>}
           {view==='settings'&&household&&<SettingsPage user={user} categories={categories} household={household} token={token} onUserUpdated={setUser} onCategoriesChanged={setCategories}/>}

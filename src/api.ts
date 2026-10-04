@@ -51,6 +51,11 @@ export type HouseholdRole = { value: number; name: string }
 export type HouseholdMember = {
   id: string; userId: number; name: string; username: string; email: string; isActive: boolean; role: number
 }
+export type HouseholdInvitation = {
+  id: string; householdId: string; householdName: string; email: string; role: number; emailSent: boolean; status: number
+  expiresAt: string; createdAt: string; acceptedAt?: string | null; code?: string; invitationUrl?: string
+}
+export type HouseholdInvitationPreview = { householdName: string; maskedEmail: string; role: number; expiresAt: string }
 export type Category = {
   id: string; name: string; color?: string; icon?: string; isActive: boolean
   subcategories: { id: string; name: string; isActive: boolean }[]
@@ -103,7 +108,7 @@ export type ReceiptParseResult = {
 export const api = {
   sendOtp: (email: string) => request<{ success: boolean; message: string; expiresAt: string }>('/api/otp/send', { method: 'POST', body: JSON.stringify({ email }) }),
   validateOtp: (email: string, code: string) => request<{ success: boolean; token: string }>('/api/otp/validate', { method: 'POST', body: JSON.stringify({ email, code }) }),
-  register: (data: { name: string; username: string; email: string; householdName: string }) => request('/api/users', { method: 'POST', body: JSON.stringify(data) }),
+  register: (data: { name: string; username: string; email: string; householdName?: string; invitationCode?: string }) => request('/api/users', { method: 'POST', body: JSON.stringify(data) }),
   me: (token: string) => request<User>('/api/users/me', {}, token),
   updateProfile: (data: { name: string; username: string }, token: string) => request<User>('/api/users/me', { method: 'PATCH', body: JSON.stringify(data) }, token),
   households: (token: string) => request<Household[]>('/api/households', {}, token),
@@ -111,6 +116,13 @@ export const api = {
   householdMembers: (householdId: string, token: string) => request<HouseholdMember[]>(`/api/households/${householdId}/members`, {}, token),
   addHouseholdMember: (householdId: string, data: { email: string; role: number }, token: string) => request<HouseholdMember>(`/api/households/${householdId}/members`, { method: 'POST', body: JSON.stringify(data) }, token),
   removeHouseholdMember: (householdId: string, memberId: string, token: string) => request<void>(`/api/households/${householdId}/members/${memberId}`, { method: 'DELETE' }, token),
+  householdInvitations: (householdId: string, token: string) => request<HouseholdInvitation[]>(`/api/households/${householdId}/invitations`, {}, token),
+  createHouseholdInvitation: (householdId: string, data: { email: string; role: number }, token: string) => request<HouseholdInvitation>(`/api/households/${householdId}/invitations`, { method: 'POST', body: JSON.stringify(data) }, token),
+  sendHouseholdInvitationEmail: (householdId: string, invitationId: string, token: string) => request<{ id:string; email:string; emailSent:boolean }>(`/api/households/${householdId}/invitations/${invitationId}/send-email`, { method: 'POST' }, token),
+  revokeHouseholdInvitation: (householdId: string, invitationId: string, token: string) => request<void>(`/api/households/${householdId}/invitations/${invitationId}`, { method: 'DELETE' }, token),
+  regenerateHouseholdInvitation: (householdId: string, invitationId: string, token: string) => request<HouseholdInvitation>(`/api/households/${householdId}/invitations/${invitationId}/regenerate-code`, { method: 'POST' }, token),
+  householdInvitation: (code: string) => request<HouseholdInvitationPreview>(`/api/household-invitations/${encodeURIComponent(code)}`),
+  acceptHouseholdInvitation: (code: string, token: string) => request<HouseholdMember>(`/api/household-invitations/${encodeURIComponent(code)}/accept`, { method: 'POST' }, token),
   categories: (householdId: string, token: string) => request<Category[]>(`/api/households/${householdId}/categories`, {}, token),
   expenses: (householdId: string, from: string, to: string, token: string) => request<Expense[]>(`/api/households/${householdId}/expenses?from=${from}&to=${to}`, {}, token),
   dashboard: (householdId: string, year: number, month: number, token: string) => request<Dashboard>(`/api/households/${householdId}/dashboard/${year}/${month}`, {}, token),
