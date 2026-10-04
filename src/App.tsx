@@ -297,6 +297,17 @@ function ExpenseModal({ item, categories, householdId, token, onClose, onSaved }
   const [split,setSplit]=useState(!!item)
   const [lines,setLines]=useState<ExpenseLineDraft[]>(()=>item?.lines.map(line=>({description:line.description,quantity:line.quantity==null?'':String(line.quantity),unitPrice:line.unitPrice==null?'':String(line.unitPrice),amount:String(line.amount),categoryId:line.categoryId,subcategoryId:line.subcategoryId||''}))||[])
   const [saving,setSaving]=useState(false); const [error,setError]=useState('')
+  useEffect(()=>{
+    if(!window.matchMedia('(max-width: 560px)').matches)return
+    const selector=split?'.expense-with-lines':'.modal-form:has(.split-expense-button)'
+    const formElement=document.querySelector(selector)
+    if(!formElement)return
+    const focusField=(event:Event)=>{const target=event.target;if(!(target instanceof HTMLInputElement||target instanceof HTMLSelectElement))return;window.setTimeout(()=>target.scrollIntoView({behavior:'smooth',block:'center'}),180)}
+    const finishWithKeyboard=(event:Event)=>{if(!(event instanceof KeyboardEvent)||event.key!=='Enter'||!(event.target instanceof HTMLInputElement))return;event.preventDefault();event.target.blur()}
+    const finishPicker=(event:Event)=>{const target=event.target;if(target instanceof HTMLSelectElement||target instanceof HTMLInputElement&&target.type==='date')window.setTimeout(()=>target.blur(),80)}
+    formElement.addEventListener('focusin',focusField);formElement.addEventListener('keydown',finishWithKeyboard);formElement.addEventListener('change',finishPicker)
+    return()=>{formElement.removeEventListener('focusin',focusField);formElement.removeEventListener('keydown',finishWithKeyboard);formElement.removeEventListener('change',finishPicker)}
+  },[split])
   const selected=categories.find(c=>c.id===form.categoryId)
   const parseAmount=(value:string)=>Number(value.replace(',','.'))
   const parseOptional=(value:string)=>value.trim()===''?null:parseAmount(value)

@@ -282,3 +282,37 @@
   .auth-box{margin:0}
   .auth-powered{position:static;margin-top:auto;padding-top:14px}
 }
+
+/* compact expense editing on mobile */
+@media(max-width:560px){
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button)){gap:9px}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.input-pair{gap:8px}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.input-pair>label,
+  .expense-with-lines .expense-line>label{display:grid;grid-template-columns:minmax(86px,.75fr) minmax(0,1.25fr);align-items:center;gap:10px;min-height:48px;padding:7px 11px;border:1px solid #ecebf0;border-radius:12px;background:#f8f8fa;color:#777580;scroll-margin:120px 0;font-size:10px;transition:border-color .18s,box-shadow .18s,background .18s,padding .18s}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.input-pair>label>input,
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.input-pair>label>select,
+  .expense-with-lines .expense-line>label>input,
+  .expense-with-lines .expense-line>label>select{width:100%;height:34px;margin:0;border:0;background:transparent;box-shadow:none;padding:0;color:#34333c;text-align:right;text-align-last:right;font-size:16px;font-weight:700}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.input-pair>label:focus-within,
+  .expense-with-lines .expense-line>label:focus-within{display:block;padding:13px;border-color:#8c7cff;background:#fff;box-shadow:0 0 0 3px #6d5dfc16;color:#4c4c57;font-size:11px}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.input-pair>label:focus-within>input,
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.input-pair>label:focus-within>select,
+  .expense-with-lines .expense-line>label:focus-within>input,
+  .expense-with-lines .expense-line>label:focus-within>select{height:48px;margin-top:7px;border:1px solid #dedee5;border-radius:10px;background:#fff;padding:0 12px;text-align:left;text-align-last:left;font-weight:500}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.input-pair>label small,
+  .expense-with-lines .expense-line>label small{display:none;white-space:nowrap}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.input-pair>label:focus-within small,
+  .expense-with-lines .expense-line>label:focus-within small{display:inline;float:right}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.amount-label{display:grid;grid-template-columns:86px minmax(0,1fr);align-items:center;min-height:56px;padding:7px 11px;border:1px solid #e5e3ed;border-radius:13px;background:#f4f2ff;color:#5e4fed;scroll-margin:120px 0}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.amount-label>.amount-input{margin:0;border:0;justify-content:flex-end}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.amount-label>.amount-input span{font-size:17px}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.amount-label>.amount-input input{width:min(170px,100%);height:40px;font-size:23px;text-align:right;padding-left:7px}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.amount-label:focus-within{display:block;padding:13px;border-color:#8c7cff;background:#fff;box-shadow:0 0 0 3px #6d5dfc16;color:#4c4c57}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.amount-label:focus-within>.amount-input{justify-content:flex-start;margin-top:5px;border-bottom:1px solid var(--line)}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.amount-label:focus-within>.amount-input span{font-size:24px}
+  :is(.expense-with-lines,.modal-form:has(.split-expense-button))>.amount-label:focus-within>.amount-input input{width:100%;height:54px;font-size:32px;text-align:left}
+  .expense-with-lines .expense-lines{border-radius:13px}
+  .expense-with-lines .expense-line{gap:7px;padding:9px;background:#fff}
+  .expense-with-lines .expense-line>button{margin-top:2px}
+  .expense-with-lines .expense-lines-footer{padding:12px}
+}
