@@ -3,7 +3,7 @@ import {
   ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Bell, CalendarDays, Camera, Check,
   ChevronDown, ChevronRight, CircleHelp, CreditCard, FileText, Grid2X2, Home, Landmark,
   LayoutDashboard, LoaderCircle, LogOut, Menu, MoreHorizontal, Plus, ReceiptText,
-  Pencil, Play, Repeat2, Search, Settings, ShieldCheck, ShoppingBasket, Sparkles, Tags, Trash2, TrendingDown, TrendingUp,
+  Pencil, Play, RefreshCw, Repeat2, Search, Settings, ShieldCheck, ShoppingBasket, Sparkles, Tags, Trash2, TrendingDown, TrendingUp,
   TriangleAlert, Upload, UserPlus, UserRound, UsersRound, Utensils, WalletCards, X,
 } from 'lucide-react'
 import { api, ApiError, type Budget, type Category, type Dashboard, type Expense, type ExpensePayloadLine, type Household, type HouseholdMember, type HouseholdRole, type ReceiptImageQuality, type ReceiptParseLine, type ReceiptParseResult, type RecurringExpense, type RecurringExpenseMaterialization, type User } from './api'
@@ -25,8 +25,12 @@ function formatDate(value?: string | null) {
   return match?`${match[3]}/${match[2]}/${match[1]}`:''
 }
 
+function dateInputValue(value?:string|null) {
+  return value?.match(/^\d{4}-\d{2}-\d{2}/)?.[0]||''
+}
+
 function DateInput({value,onChange,required=false,min}:{value:string;onChange:(value:string)=>void;required?:boolean;min?:string}) {
-  return <input className="date-input" type="date" required={required} min={min} value={value} onChange={event=>onChange(event.target.value)}/>
+  return <input className="date-input" type="date" required={required} min={dateInputValue(min)} value={dateInputValue(value)} onChange={event=>onChange(event.currentTarget.value)}/>
 }
 
 function decimalCharacters(value:string){const clean=value.replace(/,/g,'.').replace(/[^0-9.]/g,'');const dot=clean.indexOf('.');return dot<0?clean:`${clean.slice(0,dot+1)}${clean.slice(dot+1).replace(/\./g,'')}`}
@@ -211,14 +215,14 @@ function BalanceChart({dashboard,expenses}:{dashboard:Dashboard;expenses:Expense
   return <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-labelledby="balance-chart-title balance-chart-description"><title id="balance-chart-title">Evolução diária do saldo disponível</title><desc id="balance-chart-description">O saldo começou em {euro.format(dashboard.budget)} e está em {euro.format(points.at(-1)?.value??dashboard.budget)} no dia {lastDay}.</desc><defs><linearGradient id="balance-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7565fc" stopOpacity=".24"/><stop offset="100%" stopColor="#7565fc" stopOpacity=".02"/></linearGradient></defs><line className="balance-grid-line" x1={left} y1={bottom} x2={right} y2={bottom}/><path className="balance-area" d={areaPath}/><path className="balance-line" d={linePath}/>{expensePoints.map(point=><circle className="balance-expense-point" key={point.day} cx={x(point.day)} cy={y(point.value)} r="3"><title>Dia {point.day}: {euro.format(point.value)} disponíveis após {euro.format(point.spent)} em despesas</title></circle>)}<circle className="balance-current-point-halo" cx={x(lastDay)} cy={y(points.at(-1)?.value??dashboard.budget)} r="7"/><circle className="balance-current-point" cx={x(lastDay)} cy={y(points.at(-1)?.value??dashboard.budget)} r="3.5"><title>Saldo disponível: {euro.format(points.at(-1)?.value??dashboard.budget)}</title></circle>{labelDays.map(day=><text className="balance-axis-label" key={day} x={x(day)} y="105" textAnchor={day===1?'start':day===lastDay?'end':'middle'}>{day}</text>)}</svg>
 }
 
-function Overview({ dashboard, expenses, categories, user, periodLabel, changePeriod, openModal, setView }: { dashboard?: Dashboard; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void }) {
+function Overview({ dashboard, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh }: { dashboard?: Dashboard; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void }) {
   const pct = dashboard?.budget ? Math.min(100, dashboard.confirmedExpenses / dashboard.budget * 100) : null
   const savingRate=dashboard?.plannedIncome ? (dashboard.plannedIncome-dashboard.confirmedExpenses)/dashboard.plannedIncome*100 : null
   const dashboardCategories=dashboard?.categories||[]
   const maxBar = Math.max(...dashboardCategories.map(c => c.spent), 1)
   return <>
     <div className="page-heading"><div><p className="greeting">Olá, {user.name.trim().split(/\s+/)[0]} <span>👋</span></p><h1>Vamos cuidar das tuas finanças.</h1></div><div className="heading-actions"><button className="secondary-button" onClick={() => openModal('receipt')}><Camera size={17} /> Digitalizar talão</button><button className="primary-button" onClick={() => openModal('expense')}><Plus size={17} /> Nova despesa</button></div></div>
-    <div className="overview-period"><MonthNavigator label={periodLabel} onChange={changePeriod}/></div>
+    <div className="overview-period"><MonthNavigator label={periodLabel} onChange={changePeriod}/><button type="button" className={`overview-refresh ${refreshing?'refreshing':''}`} aria-label="Atualizar visão geral" onClick={onRefresh} disabled={refreshing}><span><RefreshCw size={16}/></span><div><strong>{refreshing?'A atualizar…':'Atualizar'}</strong><small>Sincronizar dados</small></div></button></div>
     <section className="hero-grid">
       <div className="balance-card">
         <div className="balance-top"><div><span className="card-label">DISPONÍVEL ESTE MÊS</span><div className="money-main">{dashboard?euro.format(dashboard.available):'Dados não obtidos'}</div></div></div>
@@ -268,7 +272,20 @@ function ExpensesPage({ expenses, categories, periodLabel, loading, changePeriod
   const [search, setSearch] = useState('')
   const [expandedExpenseId,setExpandedExpenseId]=useState<string>()
   const shown = expenses.filter(e => `${e.description} ${e.merchantName} ${e.categoryName} ${e.lines?.map(line=>`${line.description} ${line.categoryName} ${line.subcategoryName||''}`).join(' ')||''}`.toLowerCase().includes(search.toLowerCase()))
-  return <><div className="page-heading"><div><p className="section-kicker">MOVIMENTOS</p><h1>Todas as despesas</h1><p className="page-subtitle">Acompanha cada euro, sem perder o fio à meada.</p></div><div className="heading-actions"><button className="secondary-button" onClick={() => openModal('receipt')}><Camera size={17} /> Digitalizar talão</button><button className="primary-button" onClick={() => openModal('expense')}><Plus size={17} /> Nova despesa</button></div></div><div className="panel data-panel"><div className="table-toolbar"><div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar movimentos" /></div><MonthNavigator label={periodLabel} onChange={changePeriod}/></div><div className="expense-table"><div className="table-row table-header"><span>Movimento</span><span>Data</span><span>Origem</span><span>Valor</span><span /></div>{loading?<div className="movement-loading"><LoaderCircle className="spin"/><span>A carregar movimentos de {periodLabel}…</span></div>:shown.length?shown.map(e => {const expanded=expandedExpenseId===e.id;return <Fragment key={e.id}><div className={`table-row ${expanded?'expanded':''}`}><span><Transaction expense={e} categories={categories}/></span><span>{formatDate(e.date)}</span><span><i className="origin-pill">{e.origin === 1 ? 'Manual' : e.origin === 2 ? 'Recorrente' : 'Talão'}</i></span><strong>− {euro.format(e.amount)}</strong><button className="expense-lines-toggle" aria-label={`${expanded?'Ocultar':'Ver'} parcelas de ${e.description}`} title={expanded?'Ocultar parcelas':'Ver parcelas'} aria-expanded={expanded} onClick={()=>setExpandedExpenseId(expanded?undefined:e.id)}>{expanded?<ChevronDown size={17}/>:<ChevronRight size={17}/>}</button></div>{expanded&&<ExpenseLinesPanel expense={e} categories={categories} onEdit={onEdit}/>}</Fragment>}):<DataUnavailable message={`Ainda não existem movimentos em ${periodLabel}.`}/>}</div></div></>
+  const monthTotal=expenses.reduce((sum,expense)=>sum+(Number.isFinite(expense.amount)?expense.amount:0),0)
+  return <>
+    <div className="page-heading">
+      <div><p className="section-kicker">MOVIMENTOS</p><h1>Todas as despesas</h1><p className="page-subtitle">Acompanha cada euro, sem perder o fio à meada.</p></div>
+      <div className="heading-actions"><button className="secondary-button" onClick={() => openModal('receipt')}><Camera size={17} /> Digitalizar talão</button><button className="primary-button" onClick={() => openModal('expense')}><Plus size={17} /> Nova despesa</button></div>
+    </div>
+    <div className="panel data-panel">
+      <div className="table-toolbar">
+        <div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar movimentos" /></div>
+        <div className="movement-toolbar-summary"><div className="movement-month-total"><span>Total do mês</span><strong>{loading?'—':euro.format(monthTotal)}</strong></div><MonthNavigator label={periodLabel} onChange={changePeriod}/></div>
+      </div>
+      <div className="expense-table"><div className="table-row table-header"><span>Movimento</span><span>Data</span><span>Origem</span><span>Valor</span><span /></div>{loading?<div className="movement-loading"><LoaderCircle className="spin"/><span>A carregar movimentos de {periodLabel}…</span></div>:shown.length?shown.map(e => {const expanded=expandedExpenseId===e.id;return <Fragment key={e.id}><div className={`table-row ${expanded?'expanded':''}`}><span><Transaction expense={e} categories={categories}/></span><span>{formatDate(e.date)}</span><span><i className="origin-pill">{e.origin === 1 ? 'Manual' : e.origin === 2 ? 'Recorrente' : 'Talão'}</i></span><strong>− {euro.format(e.amount)}</strong><button className="expense-lines-toggle" aria-label={`${expanded?'Ocultar':'Ver'} parcelas de ${e.description}`} title={expanded?'Ocultar parcelas':'Ver parcelas'} aria-expanded={expanded} onClick={()=>setExpandedExpenseId(expanded?undefined:e.id)}>{expanded?<ChevronDown size={17}/>:<ChevronRight size={17}/>}</button></div>{expanded&&<ExpenseLinesPanel expense={e} categories={categories} onEdit={onEdit}/>}</Fragment>}):<DataUnavailable message={`Ainda não existem movimentos em ${periodLabel}.`}/>}</div>
+    </div>
+  </>
 }
 
 function BudgetsPage({ dashboard, budgets, openModal }: { dashboard?: Dashboard; budgets: Budget[]; openModal: (m: Modal) => void }) {
@@ -365,11 +382,11 @@ function ReceiptQualityDecision({ quality, loading, onChooseAnother, onAccept }:
 function ReceiptModal({ householdId, token, categories, onClose, onCreated }: { householdId:string; token:string; categories:Category[]; onClose:()=>void; onCreated:(item:Expense)=>void }) {
   const inputRef=useRef<HTMLInputElement>(null);const [file,setFile]=useState<File>();const [loading,setLoading]=useState(false);const [result,setResult]=useState<ReceiptParseResult>();const [original,setOriginal]=useState<ReceiptParseResult>();const [editing,setEditing]=useState(false);const [editStep,setEditStep]=useState(0);const [qualityWarning,setQualityWarning]=useState<ReceiptImageQuality>();const [error,setError]=useState('')
   useEffect(()=>{if(!editing)return;const active=document.querySelector('.receipt-stepper .active');const stepper=active?.parentElement;if(!(active instanceof HTMLElement)||!stepper)return;stepper.scrollTo({left:active.offsetLeft-(stepper.clientWidth-active.clientWidth)/2,behavior:'smooth'})},[editStep,editing])
-  async function parse(acceptLowQuality=false){if(!file)return;setLoading(true);setError('');try{const parsed=await api.parseReceipt(householdId,file,token,acceptLowQuality);setQualityWarning(undefined);setResult(parsed);setOriginal(structuredClone(parsed));setEditing(false);setEditStep(0)}catch(err){if(err instanceof ApiError&&err.status===422&&err.code==='receipt_image_quality_insufficient'&&err.imageQuality)setQualityWarning(err.imageQuality);else setError(err instanceof ApiError?err.message:'Não foi possível analisar o talão.')}finally{setLoading(false)}}
+  async function parse(acceptLowQuality=false){if(!file)return;setLoading(true);setError('');try{const parsed=await api.parseReceipt(householdId,file,token,acceptLowQuality);const normalized={...parsed,purchaseDate:dateInputValue(parsed.purchaseDate)||parsed.purchaseDate};setQualityWarning(undefined);setResult(normalized);setOriginal(structuredClone(normalized));setEditing(false);setEditStep(0)}catch(err){if(err instanceof ApiError&&err.status===422&&err.code==='receipt_image_quality_insufficient'&&err.imageQuality)setQualityWarning(err.imageQuality);else setError(err instanceof ApiError?err.message:'Não foi possível analisar o talão.')}finally{setLoading(false)}}
   function chooseAnotherFile(){setFile(undefined);setQualityWarning(undefined);setError('');if(inputRef.current)inputRef.current.value=''}
-  function updateLine(index:number,line:ReceiptParseLine){if(!result)return;setResult({...result,lines:result.lines.map((item,itemIndex)=>itemIndex===index?line:item)})}
-  function addLine(){if(!result)return;const lines=[...result.lines,{description:'',quantity:1,unitPrice:null,amount:0,suggestedCategoryId:null,suggestedCategoryName:null,suggestedSubcategoryId:null,suggestedSubcategoryName:null,confidence:0}];setResult({...result,lines});setEditStep(lines.length);setError('')}
-  function removeLine(index:number){if(!result||result.lines.length<=1)return;const lines=result.lines.filter((_,itemIndex)=>itemIndex!==index);setResult({...result,lines});setEditStep(Math.min(index+1,lines.length));setError('')}
+  function updateLine(index:number,line:ReceiptParseLine){setResult(current=>current?{...current,lines:current.lines.map((item,itemIndex)=>itemIndex===index?line:item)}:current)}
+  function addLine(){if(!result)return;const lines=[...result.lines,{description:'',quantity:1,unitPrice:null,amount:0,suggestedCategoryId:null,suggestedCategoryName:null,suggestedSubcategoryId:null,suggestedSubcategoryName:null,confidence:0}];setResult(current=>current?{...current,lines}:current);setEditStep(lines.length);setError('')}
+  function removeLine(index:number){if(!result||result.lines.length<=1)return;const lines=result.lines.filter((_,itemIndex)=>itemIndex!==index);setResult(current=>current?{...current,lines}:current);setEditStep(Math.min(index+1,lines.length));setError('')}
   async function confirm(){
     if(!result||!original)return
     setError('')
@@ -518,7 +535,7 @@ function App() {
   const [movementPeriod,setMovementPeriod]=useState(initialPeriod)
   const [households,setHouseholds]=useState<Household[]>([]);const [household,setHousehold]=useState<Household>();const [categories,setCategories]=useState<Category[]>([]);const [expenses,setExpenses]=useState<Expense[]>([]);const [dashboard,setDashboard]=useState<Dashboard>();const [budgets,setBudgets]=useState<Budget[]>([]);const [recurring,setRecurring]=useState<RecurringExpense[]>([]);const [loading,setLoading]=useState(false);const [loadError,setLoadError]=useState('')
   const [movementExpenses,setMovementExpenses]=useState<Expense[]>([]);const [movementLoading,setMovementLoading]=useState(false)
-  const [editingExpense,setEditingExpense]=useState<Expense|null>(null);const [dataRevision,setDataRevision]=useState(0)
+  const [editingExpense,setEditingExpense]=useState<Expense|null>(null);const [dataRevision,setDataRevision]=useState(0);const [overviewRefreshing,setOverviewRefreshing]=useState(false)
   const [creatingRecurring,setCreatingRecurring]=useState(false)
   const [editingRecurring,setEditingRecurring]=useState<RecurringExpense|null>(null)
   const authenticated=!!token
@@ -535,6 +552,14 @@ function App() {
   function logout(){sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setView('overview')}
   function changePeriod(offset:number){setPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
   function changeMovementPeriod(offset:number){setMovementPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
+  async function refreshOverview(){
+    if(!token||!household||overviewRefreshing)return
+    setOverviewRefreshing(true);setLoadError('')
+    const month=String(period.month).padStart(2,'0');const from=`${period.year}-${month}-01`;const to=`${period.year}-${month}-${String(new Date(period.year,period.month,0).getDate()).padStart(2,'0')}`
+    try{const [c,e,d,b,r]=await Promise.all([api.categories(household.id,token),api.expenses(household.id,from,to,token),api.dashboard(household.id,period.year,period.month,token),api.budgets(household.id,token),api.recurringExpenses(household.id,token)]);setCategories(c);setExpenses(e);setDashboard(d);setBudgets(b);setRecurring(r)}
+    catch(error){setLoadError(error instanceof ApiError?error.message:'Não foi possível atualizar a visão geral.')}
+    finally{setOverviewRefreshing(false)}
+  }
   if(!authenticated)return <Auth onAuthenticated={login}/>
   if(!user)return <div className="page-loader"><LoaderCircle className="spin"/><span>A carregar os dados da conta…</span></div>
   return <div className="app-shell">
@@ -544,7 +569,7 @@ function App() {
       <main className="content">
         {loadError&&<div className="page-error">{loadError}</div>}
         {loading?<div className="page-loader"><LoaderCircle className="spin"/><span>A organizar as tuas finanças…</span></div>:<>
-          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={setModal} setView={setView}/>} 
+          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={setModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview}/>}
           {view==='expenses'&&<ExpensesPage expenses={movementExpenses} categories={categories} periodLabel={movementPeriodLabel} loading={movementLoading} changePeriod={changeMovementPeriod} openModal={setModal} onEdit={setEditingExpense}/>} 
           {view==='budgets'&&<BudgetsPage dashboard={dashboard} budgets={budgets} openModal={setModal}/>} 
           {view==='recurring'&&<RecurringPage items={recurring} categories={categories} onCreate={()=>setCreatingRecurring(true)} onEdit={setEditingRecurring} onMaterialize={async item=>{const result=await api.materializeRecurringExpense(householdId,item.id,token);setRecurring(current=>current.map(existing=>existing.id===item.id?{...existing,nextOccurrenceDate:result.nextOccurrenceDate,isActive:result.isActive}:existing));setDataRevision(current=>current+1);return result}}/>}
@@ -557,8 +582,8 @@ function App() {
     {editingExpense&&<ExpenseModal item={editingExpense} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingExpense(null)} onSaved={()=>setDataRevision(current=>current+1)}/>} 
     {modal==='receipt'&&<ReceiptModal householdId={householdId} token={token} categories={categories} onClose={()=>setModal(null)} onCreated={()=>setDataRevision(current=>current+1)}/>} 
     {modal==='budget'&&<BudgetModal householdId={householdId} token={token} onClose={()=>setModal(null)} onCreated={b=>setBudgets([b,...budgets])}/>} 
-    {creatingRecurring&&<RecurringExpenseModal categories={categories} householdId={householdId} token={token} onClose={()=>setCreatingRecurring(false)} onSaved={created=>setRecurring(current=>[created,...current])}/>} 
-    {editingRecurring&&<RecurringExpenseModal item={editingRecurring} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingRecurring(null)} onSaved={updated=>setRecurring(current=>current.map(item=>item.id===updated.id?updated:item))}/>} 
+    {creatingRecurring&&<RecurringExpenseModal categories={categories} householdId={householdId} token={token} onClose={()=>setCreatingRecurring(false)} onSaved={created=>{setRecurring(current=>[created,...current]);void refreshOverview()}}/>}
+    {editingRecurring&&<RecurringExpenseModal item={editingRecurring} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingRecurring(null)} onSaved={updated=>{setRecurring(current=>current.map(item=>item.id===updated.id?updated:item));void refreshOverview()}}/>}
   </div>
 }
 
