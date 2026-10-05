@@ -70,7 +70,7 @@ export type Expense = {
   origin: number; status: number; lines: ExpenseLine[]
 }
 export type ExpenseSuggestion = {
-  merchantName: string; merchantTaxNumber?: string | null; categoryId: string; categoryName: string
+  description: string; merchantName: string; merchantTaxNumber?: string | null; categoryId: string; categoryName: string
   subcategoryId?: string | null; subcategoryName?: string | null; occurrenceCount: number; lastOccurrenceDate: string
 }
 export type ExpensePayloadLine = {
