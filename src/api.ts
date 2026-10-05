@@ -69,6 +69,10 @@ export type Expense = {
   subcategoryId?: string | null; subcategoryName?: string | null; merchantName?: string | null; merchantTaxNumber?: string | null
   origin: number; status: number; lines: ExpenseLine[]
 }
+export type ExpenseSuggestion = {
+  merchantName: string; merchantTaxNumber?: string | null; categoryId: string; categoryName: string
+  subcategoryId?: string | null; subcategoryName?: string | null; occurrenceCount: number; lastOccurrenceDate: string
+}
 export type ExpensePayloadLine = {
   categoryId: string; subcategoryId?: string | null; description: string
   quantity?: number | null; unitPrice?: number | null; amount: number
@@ -125,6 +129,7 @@ export const api = {
   acceptHouseholdInvitation: (code: string, token: string) => request<HouseholdMember>(`/api/household-invitations/${encodeURIComponent(code)}/accept`, { method: 'POST' }, token),
   categories: (householdId: string, token: string) => request<Category[]>(`/api/households/${householdId}/categories`, {}, token),
   expenses: (householdId: string, from: string, to: string, token: string) => request<Expense[]>(`/api/households/${householdId}/expenses?from=${from}&to=${to}`, {}, token),
+  expenseSuggestions: (householdId: string, token: string) => request<ExpenseSuggestion[]>(`/api/households/${householdId}/expenses/suggestions`, {}, token),
   dashboard: (householdId: string, year: number, month: number, token: string) => request<Dashboard>(`/api/households/${householdId}/dashboard/${year}/${month}`, {}, token),
   budgets: (householdId: string, token: string) => request<Budget[]>(`/api/households/${householdId}/budgets`, {}, token),
   recurringExpenses: (householdId: string, token: string) => request<RecurringExpense[]>(`/api/households/${householdId}/recurring-expenses`, {}, token),
