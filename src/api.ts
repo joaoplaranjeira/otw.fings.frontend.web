@@ -48,9 +48,13 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 export type Household = { id: string; name: string; currency: string; timeZone: string; role: number }
 export type User = { id: number; name: string; username: string; email: string }
 export type HouseholdRole = { value: number; name: string }
+export type HouseholdRelationship = { value: number; name: string }
 export type HouseholdMember = {
-  id: string; userId: number; name: string; username: string; email: string; isActive: boolean; role: number
+  id: string; userId?: number | null; name: string; username?: string | null; email?: string | null; isActive?: boolean | null
+  role?: number | null; relationship?: number | null; birthDate?: string | null
 }
+export type CreateHouseholdMemberPayload = { name:string; relationship:number; birthDate:string; email?:string|null; role?:number|null }
+export type UpdateHouseholdMemberPayload = { name:string; relationship:number; birthDate:string; role?:number|null }
 export type HouseholdInvitation = {
   id: string; householdId: string; householdName: string; email: string; role: number; emailSent: boolean; status: number
   expiresAt: string; createdAt: string; acceptedAt?: string | null; code?: string; invitationUrl?: string
@@ -117,8 +121,10 @@ export const api = {
   updateProfile: (data: { name: string; username: string }, token: string) => request<User>('/api/users/me', { method: 'PATCH', body: JSON.stringify(data) }, token),
   households: (token: string) => request<Household[]>('/api/households', {}, token),
   householdRoles: (token: string) => request<HouseholdRole[]>('/api/household-roles', {}, token),
+  householdRelationships: (token: string) => request<HouseholdRelationship[]>('/api/household-relationships', {}, token),
   householdMembers: (householdId: string, token: string) => request<HouseholdMember[]>(`/api/households/${householdId}/members`, {}, token),
-  addHouseholdMember: (householdId: string, data: { email: string; role: number }, token: string) => request<HouseholdMember>(`/api/households/${householdId}/members`, { method: 'POST', body: JSON.stringify(data) }, token),
+  addHouseholdMember: (householdId: string, data: CreateHouseholdMemberPayload, token: string) => request<HouseholdMember>(`/api/households/${householdId}/members`, { method: 'POST', body: JSON.stringify(data) }, token),
+  updateHouseholdMember: (householdId: string, memberId:string, data:UpdateHouseholdMemberPayload, token:string) => request<HouseholdMember>(`/api/households/${householdId}/members/${memberId}`, { method:'PUT', body:JSON.stringify(data) }, token),
   removeHouseholdMember: (householdId: string, memberId: string, token: string) => request<void>(`/api/households/${householdId}/members/${memberId}`, { method: 'DELETE' }, token),
   householdInvitations: (householdId: string, token: string) => request<HouseholdInvitation[]>(`/api/households/${householdId}/invitations`, {}, token),
   createHouseholdInvitation: (householdId: string, data: { email: string; role: number }, token: string) => request<HouseholdInvitation>(`/api/households/${householdId}/invitations`, { method: 'POST', body: JSON.stringify(data) }, token),
