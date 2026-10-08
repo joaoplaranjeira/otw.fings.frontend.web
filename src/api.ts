@@ -112,6 +112,21 @@ export type ReceiptParseResult = {
   purchaseDate?: string | null; currency: string; subtotal?: number | null; tax?: number | null; total: number; linesTotal: number
   lines: ReceiptParseLine[]; warnings: string[]; imageQuality: ReceiptImageQuality
 }
+export type NotificationChannel = 'WebPush' | 'Email' | 'InApp'
+export type FingsNotification = {
+  id: string; householdId?: string | null; notificationType: string; title: string; body: string
+  actionUrl?: string | null; createdAtUtc: string; readAtUtc?: string | null
+}
+export type NotificationPreference = {
+  householdId?: string | null; notificationType: string; channel: NotificationChannel; isEnabled: boolean
+}
+export type PushSubscriptionInfo = {
+  id: string; endpoint: string; expirationTimeUtc?: string | null; deviceName?: string | null
+  isActive: boolean; createdAtUtc: string; lastUsedAtUtc?: string | null
+}
+export type PushSubscriptionPayload = {
+  endpoint: string; p256dh: string; auth: string; expirationTimeUtc?: string | null; deviceName?: string | null
+}
 
 export const api = {
   sendOtp: (email: string) => request<{ success: boolean; message: string; expiresAt: string }>('/api/otp/send', { method: 'POST', body: JSON.stringify({ email }) }),
@@ -156,4 +171,12 @@ export const api = {
     return request<ReceiptParseResult>(`/api/households/${householdId}/receipts/parse?acceptLowQuality=${acceptLowQuality}`, { method: 'POST', body: form }, token)
   },
   validateReceiptParse: (householdId: string, parseId: string, data: { isValid: boolean; notes?: string | null }, token: string) => request(`/api/households/${householdId}/receipts/parses/${parseId}/validation`, { method: 'PATCH', body: JSON.stringify(data) }, token),
+  notifications: (token: string, unreadOnly = false) => request<FingsNotification[]>(`/api/notifications?unreadOnly=${unreadOnly}`, {}, token),
+  markNotificationRead: (notificationId: string, token: string) => request<void>(`/api/notifications/${notificationId}/read`, { method: 'POST' }, token),
+  notificationPreferences: (token: string) => request<NotificationPreference[]>('/api/notification-preferences', {}, token),
+  updateNotificationPreferences: (preferences: NotificationPreference[], token: string) => request<NotificationPreference[]>('/api/notification-preferences', { method: 'PUT', body: JSON.stringify({ preferences }) }, token),
+  pushPublicKey: (token: string) => request<{ publicKey: string }>('/api/push/public-key', {}, token),
+  pushSubscriptions: (token: string) => request<PushSubscriptionInfo[]>('/api/push/subscriptions', {}, token),
+  putPushSubscription: (subscription: PushSubscriptionPayload, token: string) => request<PushSubscriptionInfo>('/api/push/subscriptions', { method: 'PUT', body: JSON.stringify(subscription) }, token),
+  deletePushSubscription: (subscriptionId: string, token: string) => request<void>(`/api/push/subscriptions/${subscriptionId}`, { method: 'DELETE' }, token),
 }

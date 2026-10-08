@@ -7,9 +7,20 @@ import {
   TriangleAlert, Upload, UserPlus, UserRound, UsersRound, Utensils, WalletCards, X,
 } from 'lucide-react'
 import { api, ApiError, type Budget, type Category, type Dashboard, type Expense, type ExpensePayloadLine, type ExpenseSuggestion, type Household, type HouseholdInvitation, type HouseholdInvitationPreview, type HouseholdMember, type HouseholdRelationship, type HouseholdRole, type ReceiptImageQuality, type ReceiptParseLine, type ReceiptParseResult, type RecurringExpense, type RecurringExpenseMaterialization, type User } from './api'
+import { NotificationCenter, NotificationSettings, removeCurrentPushSubscription } from './notifications'
 
 type View = 'overview' | 'expenses' | 'budgets' | 'recurring' | 'help' | 'settings'
 type Modal = 'expense' | 'receipt' | 'budget' | 'import' | null
+
+function viewFromLocation():View {
+  const requested=new URLSearchParams(window.location.search).get('view')
+  if(requested==='expenses')return 'expenses'
+  if(requested==='budget'||requested==='budgets')return 'budgets'
+  if(requested==='recurring')return 'recurring'
+  if(requested==='help')return 'help'
+  if(requested==='settings')return 'settings'
+  return 'overview'
+}
 
 const euro = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' })
 const compactEuro = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
@@ -192,7 +203,7 @@ function Sidebar({ view, setView, mobileOpen, close, onLogout }: { view: View; s
   </aside>{mobileOpen && <button aria-label="Fechar menu" className="scrim" onClick={close} />}</>
 }
 
-function Topbar({ user, household, households, setHousehold, onMenu, onLogout }: { user: User; household?: Household; households: Household[]; setHousehold: (h: Household) => void; onMenu: () => void; onLogout?: () => void }) {
+function Topbar({ user, household, households, setHousehold, onMenu, onLogout, token, onNotificationNavigate, onNotificationSettings }: { user: User; household?: Household; households: Household[]; setHousehold: (h: Household) => void; onMenu: () => void; onLogout?: () => void; token:string; onNotificationNavigate:(actionUrl?:string|null,householdId?:string|null)=>void; onNotificationSettings:()=>void }) {
   const [householdOpen, setHouseholdOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
@@ -214,7 +225,7 @@ function Topbar({ user, household, households, setHousehold, onMenu, onLogout }:
     </div>
     <div className="top-actions">
       <button className="icon-button"><Search size={19} /></button>
-      <button className="icon-button"><Bell size={19} /></button>
+      <NotificationCenter token={token} onNavigate={onNotificationNavigate} onOpenSettings={onNotificationSettings}/>
       <span className="top-divider" />
       <div className="profile-wrap" ref={profileRef}>
         <button className="profile-button" aria-expanded={profileOpen} aria-haspopup="menu" onClick={() => setProfileOpen(open => !open)}><span>{initials(user.name)}</span><div><strong>{shortName(user.name)}</strong><small>@{user.username}</small></div><ChevronDown className={profileOpen ? 'open' : ''} size={15} /></button>
@@ -311,9 +322,9 @@ function ExpenseLinesPanel({expense,categories,onEdit,onDelete,deleting}:{expens
   return <section className="expense-detail"><header className="expense-detail-hero"><div className="expense-detail-identity"><span><ReceiptText size={20}/></span><div><small>DETALHE DO MOVIMENTO</small><h3>{expense.merchantName||expense.description}</h3><p>{formatDate(expense.date)} · {origin}</p></div></div><div className="expense-detail-actions"><div className="expense-detail-buttons"><button type="button" onClick={()=>onEdit(expense)} disabled={deleting}><Pencil size={14}/> Editar despesa</button><button type="button" className="danger" onClick={()=>onDelete(expense)} disabled={deleting}>{deleting?<LoaderCircle className="spin" size={14}/>:<Trash2 size={14}/>} {deleting?'A eliminar…':'Eliminar'}</button></div><div className="expense-detail-total"><small>VALOR TOTAL</small><strong>{euro.format(expense.amount)}</strong><span><Check size={12}/> {expense.lines.length} parcela{expense.lines.length===1?'':'s'} conciliada{expense.lines.length===1?'':'s'}</span></div></div></header><div className="expense-detail-body"><section className="expense-distribution"><div className="expense-detail-section-title"><div><span>Distribuição</span><strong>Onde foi aplicado o valor</strong></div><small>{distribution.length} categoria{distribution.length===1?'':'s'}</small></div><div className="expense-distribution-bar" aria-label="Distribuição do valor por categoria">{distribution.map(item=><i key={item.id} title={`${item.name}: ${euro.format(item.amount)}`} style={{width:`${item.amount/expense.amount*100}%`,background:item.color}}/>)}</div><div className="expense-distribution-legend">{distribution.map(item=><div key={item.id}><i style={{background:item.color}}/><span>{item.name}</span><strong>{euro.format(item.amount)}</strong><small>{Math.round(item.amount/expense.amount*100)}%</small></div>)}</div></section><section className="expense-installments"><div className="expense-detail-section-title"><div><span>Parcelas</span><strong>Composição da despesa</strong></div><small>{expense.lines.length} item{expense.lines.length===1?'':'s'}</small></div><div className="expense-installment-list">{expense.lines.map((line,index)=>{const color=categories.find(category=>category.id===line.categoryId)?.color||'#6d5dfc';return <article className="expense-installment" key={line.id}><span className="expense-installment-index">{String(index+1).padStart(2,'0')}</span><div className="expense-installment-main"><strong>{line.description}</strong><span><i style={{background:color}}/>{line.categoryName}{line.subcategoryName&&<em>{line.subcategoryName}</em>}</span></div><div className="expense-installment-math">{line.quantity!=null&&<small>QTD. {line.quantity}</small>}{line.unitPrice!=null&&<span>{line.quantity!=null?'× ':''}{euro.format(line.unitPrice)}</span>}{line.quantity==null&&line.unitPrice==null&&<small>VALOR DIRETO</small>}</div><strong className="expense-installment-amount">{euro.format(line.amount)}</strong></article>})}</div></section></div></section>
 }
 
-function ExpensesPage({ expenses, categories, periodLabel, loading, changePeriod, openModal, onEdit, onDelete, selectedCategoryId, onCategoryChange }: { expenses: Expense[]; categories: Category[]; periodLabel:string; loading:boolean; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; onEdit:(expense:Expense)=>void; onDelete:(expense:Expense)=>Promise<void>; selectedCategoryId?:string; onCategoryChange:(categoryId?:string)=>void }) {
+function ExpensesPage({ expenses, categories, periodLabel, loading, changePeriod, openModal, onEdit, onDelete, selectedCategoryId, onCategoryChange, focusExpenseId }: { expenses: Expense[]; categories: Category[]; periodLabel:string; loading:boolean; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; onEdit:(expense:Expense)=>void; onDelete:(expense:Expense)=>Promise<void>; selectedCategoryId?:string; onCategoryChange:(categoryId?:string)=>void; focusExpenseId?:string }) {
   const [search, setSearch] = useState('')
-  const [expandedExpenseId,setExpandedExpenseId]=useState<string>()
+  const [expandedExpenseId,setExpandedExpenseId]=useState<string|undefined>(focusExpenseId)
   const [deletingExpenseId,setDeletingExpenseId]=useState<string>()
   const [expenseToDelete,setExpenseToDelete]=useState<Expense>()
   const [deleteError,setDeleteError]=useState('')
@@ -321,6 +332,7 @@ function ExpensesPage({ expenses, categories, periodLabel, loading, changePeriod
   const shown = expenses.filter(e => (!selectedCategoryId||e.categoryId===selectedCategoryId||e.lines?.some(line=>line.categoryId===selectedCategoryId))&&`${e.description} ${e.merchantName} ${e.categoryName} ${e.lines?.map(line=>`${line.description} ${line.categoryName} ${line.subcategoryName||''}`).join(' ')||''}`.toLowerCase().includes(search.toLowerCase()))
   const filtersActive=!!selectedCategoryId||!!search.trim()
   const monthTotal=expenses.reduce((sum,expense)=>sum+(Number.isFinite(expense.amount)?expense.amount:0),0)
+  useEffect(()=>{if(focusExpenseId)setExpandedExpenseId(focusExpenseId)},[focusExpenseId])
   async function removeExpense(expense:Expense){
     setDeletingExpenseId(expense.id);setDeleteError('')
     try{await onDelete(expense);setExpandedExpenseId(undefined);setExpenseToDelete(undefined)}
@@ -530,6 +542,8 @@ function ReceiptModal({ householdId, token, categories, onClose, onCreated }: { 
   const safeReceiptTotal=result&&Number.isFinite(result.total)?result.total:0
   const linesDifference=Math.round((safeReceiptTotal-currentLinesTotal)*100)/100
   const totalsMatch=Math.abs(linesDifference)<.01
+  const parsedPurchaseDate=dateInputValue(result?.purchaseDate)
+  const receiptWarnings=[...new Set([...(result?.warnings||[]),...(parsedPurchaseDate&&parsedPurchaseDate!==todayIso?[`A data identificada no talão (${formatDate(parsedPurchaseDate)}) é diferente da data de hoje (${formatDate(todayIso)}). Confirma se está correta.`]:[])])]
   return <ModalShell onClose={onClose} title="Digitalizar talão" subtitle="Transforma uma fotografia em despesas organizadas.">
     {!result?<div className="receipt-upload">
       {file?qualityWarning?<ReceiptQualityDecision quality={qualityWarning} loading={loading} onChooseAnother={chooseAnotherFile} onAccept={()=>parse(true)}/>:<><div className="file-preview"><FileText/><div><strong>{file.name}</strong><small>{(file.size/1024/1024).toFixed(2)} MB · pronto para analisar</small></div><button onClick={chooseAnotherFile}><X/></button></div><button className="primary-button full" onClick={()=>parse()} disabled={loading}>{loading?<LoaderCircle className="spin"/>:<Sparkles/>}{loading?'A analisar o teu talão…':'Analisar com Fings AI'}</button></>:<button className="drop-zone" onClick={()=>inputRef.current?.click()}><span><Upload/></span><strong>Carrega uma fotografia do talão</strong><small>JPEG, PNG ou WebP · até 10 MB</small><i>Escolher ficheiro</i></button>}
@@ -537,7 +551,7 @@ function ReceiptModal({ householdId, token, categories, onClose, onCreated }: { 
     </div>:<div className={`receipt-result ${editing?'editing':''}`}>
       {editing?<><div className="receipt-edit-heading"><div><span><Pencil size={15}/></span><div><strong>Rever dados extraídos</strong><small>{editStep===0?'Passo 1 · Dados gerais do talão':`Passo ${editStep+1} · Parcela ${editStep} de ${result.lines.length}`}</small></div></div><span className="receipt-currency-badge">€ EUR</span></div><nav className="receipt-stepper" aria-label="Passos da revisão"><button className={editStep===0?'active':''} onClick={()=>{setEditStep(0);setError('')}}><span>1</span><strong>Talão</strong></button>{result.lines.map((_,index)=><button key={index} className={editStep===index+1?'active':''} aria-label={`Parcela ${index+1}`} onClick={()=>{setEditStep(index+1);setError('')}}><span>{index+2}</span><strong>Parcela {index+1}</strong></button>)}</nav><section className="receipt-step-card">{editStep===0?<><div className="receipt-step-title"><div><strong>Dados gerais</strong><small>Confirma a loja, a data e os totais.</small></div></div><div className="receipt-edit-header"><label>Loja ou comerciante<input value={result.merchantName||''} onChange={event=>setResult({...result,merchantName:event.target.value})}/></label><label>NIF<input value={result.merchantTaxNumber||''} onChange={event=>setResult({...result,merchantTaxNumber:event.target.value})}/></label><label>N.º documento<input value={result.documentNumber||''} onChange={event=>setResult({...result,documentNumber:event.target.value})}/></label><label>Data<DateInput required value={result.purchaseDate||''} onChange={purchaseDate=>setResult({...result,purchaseDate})}/></label><label>Subtotal<DecimalInput currency value={result.subtotal} onChange={subtotal=>setResult({...result,subtotal})}/></label><label>IVA<DecimalInput currency value={result.tax} onChange={tax=>setResult({...result,tax})}/></label><label className="receipt-total-field">Total<DecimalInput currency required value={result.total} onChange={total=>setResult({...result,total:total??0})}/></label></div></>:<><div className="receipt-step-title"><div><strong>Parcela {editStep} de {result.lines.length}</strong><small>Confirma a descrição, o valor e a categoria.</small></div><button type="button" onClick={addLine}><Plus size={13}/> Adicionar parcela</button></div>{result.lines[editStep-1]&&<ReceiptLineEditor line={result.lines[editStep-1]} categories={categories} onChange={updated=>updateLine(editStep-1,updated)} onRemove={()=>removeLine(editStep-1)} canRemove={result.lines.length>1}/>}</>}<div className="receipt-step-navigation"><button type="button" className="secondary-button" disabled={editStep===0} onClick={()=>{setEditStep(step=>Math.max(0,step-1));setError('')}}><ArrowLeft size={15}/> Anterior</button>{editStep<result.lines.length&&<button type="button" className="secondary-button" onClick={()=>{setEditStep(step=>step+1);setError('')}}>Seguinte <ArrowRight size={15}/></button>}</div></section></>:<><div className="result-merchant"><span><Check/></span><div><small>TALÃO ANALISADO</small><h3>{result.merchantName||'Comerciante não identificado'}</h3><p>{formatDate(result.purchaseDate)}{result.merchantTaxNumber?` · NIF ${result.merchantTaxNumber}`:''}{result.documentNumber?` · ${result.documentNumber}`:''}</p></div><strong>{euro.format(result.total)}</strong></div><div className="result-lines">{result.lines.map((line,index)=><ReceiptParsedLine key={index} line={line} categories={categories}/>)}</div></>}
       <div className={`receipt-totals ${totalsMatch?'matched':'different'}`}><div><span>Total das parcelas</span><strong>{euro.format(currentLinesTotal)}</strong></div><span className="receipt-total-connector"/><div><span>Total do talão</span><strong>{euro.format(result.total)}</strong></div><div className="receipt-total-status">{totalsMatch?<><Check size={14}/><span>Valores coincidentes</span></>:<><TriangleAlert size={14}/><span>Diferença de {euro.format(Math.abs(linesDifference))}</span></>}</div></div>
-      {!editing&&!!result.warnings?.length&&<aside className="receipt-warnings" role="alert"><span className="receipt-warning-icon"><TriangleAlert size={17}/></span><div className="receipt-warning-content"><span className="receipt-warning-label">Revisão recomendada</span><strong>Alguns dados podem precisar da tua atenção</strong><p>Confirma estes pontos antes de criares a despesa.</p><ul>{result.warnings.map((warning,index)=><li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></aside>}
+      {!editing&&receiptWarnings.length>0&&<aside className="receipt-warnings" role="alert"><span className="receipt-warning-icon"><TriangleAlert size={17}/></span><div className="receipt-warning-content"><span className="receipt-warning-label">Revisão recomendada</span><strong>Alguns dados podem precisar da tua atenção</strong><p>Confirma estes pontos antes de criares a despesa.</p><ul>{receiptWarnings.map((warning,index)=><li key={`${warning}-${index}`}>{warning}</li>)}</ul></div></aside>}
       {error&&<div className="form-error">{error}</div>}<div className="modal-actions">{editing?<button className="secondary-button" onClick={()=>{setResult(structuredClone(original));setEditing(false);setEditStep(0);setError('')}}>Cancelar alterações</button>:<><button className="secondary-button" onClick={()=>{setResult(undefined);setOriginal(undefined)}}>Voltar</button><button className="secondary-button" onClick={()=>{setEditing(true);setEditStep(0);setError('')}}><Pencil size={15}/> Rever</button></>}<button className="primary-button" disabled={loading} onClick={confirm}>{loading?<LoaderCircle className="spin"/>:<Check/>} Confirmar e inserir despesas</button></div>
     </div>}
   </ModalShell>
@@ -694,8 +708,8 @@ function HouseholdMembersSettings({ user, household, token }: { user:User; house
   </div>
 }
 
-function SettingsPage({ user, categories, household, token, onUserUpdated, onCategoriesChanged }: { user: User; categories:Category[]; household:Household; token: string; onUserUpdated: (user: User) => void; onCategoriesChanged:(categories:Category[])=>void }) {
-  const [tab,setTab]=useState<'profile'|'members'|'categories'>('profile')
+function SettingsPage({ user, categories, household, token, onUserUpdated, onCategoriesChanged, initialTab='profile' }: { user: User; categories:Category[]; household:Household; token: string; onUserUpdated: (user: User) => void; onCategoriesChanged:(categories:Category[])=>void; initialTab?:'profile'|'members'|'categories'|'notifications' }) {
+  const [tab,setTab]=useState<'profile'|'members'|'categories'|'notifications'>(initialTab)
   const [editing,setEditing]=useState(false)
   const [form, setForm] = useState({ name: user.name, username: user.username })
   const [saving, setSaving] = useState(false)
@@ -722,14 +736,15 @@ function SettingsPage({ user, categories, household, token, onUserUpdated, onCat
     } finally { setSaving(false) }
   }
 
-  return <><div className="page-heading"><div><p className="section-kicker">CONTA</p><h1>Definições</h1><p className="page-subtitle">Gere os teus dados, a família e a organização das despesas.</p></div></div><div className="settings-tabs" role="tablist"><button role="tab" aria-selected={tab==='profile'} className={tab==='profile'?'active':''} onClick={()=>setTab('profile')}><UserRound size={17}/> Dados do utilizador</button><button role="tab" aria-selected={tab==='members'} className={tab==='members'?'active':''} onClick={()=>setTab('members')}><UsersRound size={17}/> Família</button><button role="tab" aria-selected={tab==='categories'} className={tab==='categories'?'active':''} onClick={()=>setTab('categories')}><Tags size={17}/> Categorias</button></div>{tab==='profile'?<section className="panel settings-panel profile-settings-card"><div className="settings-profile-hero"><div className="settings-avatar large">{initials(user.name)}</div><div><h2>{user.name}</h2><p>@{user.username}</p></div>{!editing&&<button className="secondary-button" onClick={()=>{setEditing(true);setSuccess(false)}}><Pencil size={15}/> Editar dados</button>}</div>{editing?<form className="modal-form" onSubmit={save}><label>Nome<input autoFocus required maxLength={120} value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Nome completo"/>{fieldErrors.name?.map(message => <small className="field-error" key={message}>{message}</small>)}</label><label>Username<input required maxLength={60} autoCapitalize="none" spellCheck={false} value={form.username} onChange={event => setForm({ ...form, username: event.target.value })} placeholder="joao.silva"/>{fieldErrors.username?.map(message => <small className="field-error" key={message}>{message}</small>)}</label><div className="profile-email-note">O email <strong>{user.email}</strong> não é alterado nesta área.</div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>{setEditing(false);setForm({name:user.name,username:user.username});setError('');setFieldErrors({})}}>Cancelar</button><button className="primary-button" disabled={saving}>{saving?<LoaderCircle className="spin"/>:<Check/>} {saving?'A guardar…':'Guardar alterações'}</button></div></form>:<div className="settings-readonly-grid"><div><small>Nome completo</small><strong>{user.name}</strong></div><div><small>Username</small><strong>@{user.username}</strong></div><div><small>Email</small><strong>{user.email}</strong></div></div>}{success&&!editing&&<div className="form-success settings-success"><Check size={15}/> Dados atualizados com sucesso.</div>}</section>:tab==='members'?<HouseholdMembersSettings user={user} household={household} token={token}/>:<CategorySettings categories={categories} householdId={household.id} token={token} onChanged={onCategoriesChanged}/>}</>
+  return <><div className="page-heading"><div><p className="section-kicker">CONTA</p><h1>Definições</h1><p className="page-subtitle">Gere os teus dados, a família e a organização das despesas.</p></div></div><div className="settings-tabs" role="tablist"><button role="tab" aria-selected={tab==='profile'} className={tab==='profile'?'active':''} onClick={()=>setTab('profile')}><UserRound size={17}/> Dados do utilizador</button><button role="tab" aria-selected={tab==='members'} className={tab==='members'?'active':''} onClick={()=>setTab('members')}><UsersRound size={17}/> Família</button><button role="tab" aria-selected={tab==='categories'} className={tab==='categories'?'active':''} onClick={()=>setTab('categories')}><Tags size={17}/> Categorias</button><button role="tab" aria-selected={tab==='notifications'} className={tab==='notifications'?'active':''} onClick={()=>setTab('notifications')}><Bell size={17}/> Notificações</button></div>{tab==='profile'?<section className="panel settings-panel profile-settings-card"><div className="settings-profile-hero"><div className="settings-avatar large">{initials(user.name)}</div><div><h2>{user.name}</h2><p>@{user.username}</p></div>{!editing&&<button className="secondary-button" onClick={()=>{setEditing(true);setSuccess(false)}}><Pencil size={15}/> Editar dados</button>}</div>{editing?<form className="modal-form" onSubmit={save}><label>Nome<input autoFocus required maxLength={120} value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Nome completo"/>{fieldErrors.name?.map(message => <small className="field-error" key={message}>{message}</small>)}</label><label>Username<input required maxLength={60} autoCapitalize="none" spellCheck={false} value={form.username} onChange={event => setForm({ ...form, username: event.target.value })} placeholder="joao.silva"/>{fieldErrors.username?.map(message => <small className="field-error" key={message}>{message}</small>)}</label><div className="profile-email-note">O email <strong>{user.email}</strong> não é alterado nesta área.</div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>{setEditing(false);setForm({name:user.name,username:user.username});setError('');setFieldErrors({})}}>Cancelar</button><button className="primary-button" disabled={saving}>{saving?<LoaderCircle className="spin"/>:<Check/>} {saving?'A guardar…':'Guardar alterações'}</button></div></form>:<div className="settings-readonly-grid"><div><small>Nome completo</small><strong>{user.name}</strong></div><div><small>Username</small><strong>@{user.username}</strong></div><div><small>Email</small><strong>{user.email}</strong></div></div>}{success&&!editing&&<div className="form-success settings-success"><Check size={15}/> Dados atualizados com sucesso.</div>}</section>:tab==='members'?<HouseholdMembersSettings user={user} household={household} token={token}/>:tab==='categories'?<CategorySettings categories={categories} householdId={household.id} token={token} onChanged={onCategoriesChanged}/>:<NotificationSettings householdId={household.id} token={token}/>}</>
 }
 
-function HelpPage({navigate,openModal}:{navigate:(view:View)=>void;openModal:(modal:Modal)=>void}) {
+function HelpPage({navigate,openModal,openNotificationSettings}:{navigate:(view:View)=>void;openModal:(modal:Modal)=>void;openNotificationSettings:()=>void}) {
   const guides=[
     {icon:ReceiptText,title:'Registar uma despesa',text:'Introduz o valor e escolhe uma despesa frequente para preencher rapidamente os restantes dados.',action:'Nova despesa',onClick:()=>openModal('expense')},
     {icon:Camera,title:'Digitalizar um talão',text:'Fotografa o talão, confirma os dados extraídos e revê as categorias antes de guardar.',action:'Digitalizar talão',onClick:()=>openModal('receipt')},
     {icon:Repeat2,title:'Automatizar pagamentos',text:'Cria uma recorrência para compromissos regulares e acompanha as próximas ocorrências.',action:'Ver recorrentes',onClick:()=>navigate('recurring')},
+    {icon:Bell,title:'Ativar notificações',text:'Recebe alertas de despesas e orçamento dentro da Fings e no teu dispositivo.',action:'Gerir notificações',onClick:openNotificationSettings},
   ]
   const questions=[
     ['Como organizo melhor as despesas?','Usa categorias para a área principal e subcategorias para o detalhe. Podes geri-las em Definições e alterá-las ao registar ou rever uma despesa.'],
@@ -737,8 +752,12 @@ function HelpPage({navigate,openModal}:{navigate:(view:View)=>void;openModal:(mo
     ['Posso corrigir os dados de um talão?','Sim. Depois da análise, usa Rever para confirmar o comerciante, a data, os valores e a classificação de cada parcela.'],
     ['Como reutilizo despesas de outro mês?','Em Movimentos, escolhe Importar anteriores. Seleciona o mês de origem e as despesas pretendidas; serão copiadas para o mês que estás a consultar.'],
     ['Como funciona a partilha com a família?','Em Definições › Família, os membros autorizados podem criar convites e atribuir o papel adequado a cada pessoa.'],
+    ['Como ativo notificações no iPhone ou iPad?','Abre a Fings no Safari, usa Partilhar › Adicionar ao ecrã principal e inicia a app pelo novo ícone. Depois, em Definições › Notificações, toca em Ativar neste dispositivo.'],
+    ['Como ativo notificações no Android?','Em Definições › Notificações, toca em Ativar neste dispositivo e aceita a permissão do browser. Se as bloqueaste anteriormente, reativa-as nas definições do site ou do dispositivo.'],
+    ['Qual é a diferença entre notificações na app e push?','As notificações na app aparecem no sino da Fings quando abres a aplicação. As notificações push aparecem no sistema do iPhone, iPad ou Android, mesmo quando a Fings está fechada, e exigem autorização do dispositivo.'],
+    ['Quando recebo um alerta do orçamento?','A Fings avisa quando o orçamento mensal atinge 50%, 80% e 100%. Cada alerta é enviado apenas quando o respetivo limite é atravessado.'],
   ]
-  return <div className="help-page"><div className="page-heading"><div><p className="section-kicker">CENTRO DE AJUDA</p><h1>Como podemos ajudar?</h1><p className="page-subtitle">Orientação simples para manter as finanças da tua casa organizadas.</p></div></div><section className="help-hero"><div><span><ShieldCheck size={18}/></span><div><small>COMEÇAR COM CONFIANÇA</small><h2>Uma visão clara começa com bons registos.</h2><p>Regista os movimentos, confirma as categorias e consulta a visão geral para acompanhar o mês.</p></div></div><button type="button" onClick={()=>navigate('overview')}>Ir para a visão geral <ArrowRight size={15}/></button></section><section className="help-section"><div className="help-section-heading"><div><small>PRIMEIROS PASSOS</small><h2>O essencial, sem complicações</h2></div><span>3 ações rápidas</span></div><div className="help-guide-grid">{guides.map(({icon:Icon,title,text,action,onClick})=><article className="help-guide-card" key={title}><span><Icon/></span><h3>{title}</h3><p>{text}</p><button type="button" onClick={onClick}>{action}<ArrowRight size={14}/></button></article>)}</div></section><div className="help-lower-grid"><section className="help-section help-faq"><div className="help-section-heading"><div><small>DÚVIDAS FREQUENTES</small><h2>Respostas rápidas</h2></div></div><div>{questions.map(([question,answer])=><details key={question}><summary>{question}<ChevronDown size={16}/></summary><p>{answer}</p></details>)}</div></section><aside className="help-side-card"><span><WalletCards/></span><small>BOA PRÁTICA</small><h3>Revê o teu mês regularmente</h3><p>Confirma movimentos e categorias antes de analisar o orçamento. Dados consistentes tornam a visão financeira mais útil.</p><button type="button" onClick={()=>navigate('expenses')}>Ver movimentos <ArrowRight size={14}/></button><div><ShieldCheck size={14}/><span>A Fings mostra apenas os dados do agregado selecionado.</span></div></aside></div></div>
+  return <div className="help-page"><div className="page-heading"><div><p className="section-kicker">CENTRO DE AJUDA</p><h1>Como podemos ajudar?</h1><p className="page-subtitle">Orientação simples para manter as finanças da tua casa organizadas.</p></div></div><section className="help-hero"><div><span><ShieldCheck size={18}/></span><div><small>COMEÇAR COM CONFIANÇA</small><h2>Uma visão clara começa com bons registos.</h2><p>Regista os movimentos, confirma as categorias e consulta a visão geral para acompanhar o mês.</p></div></div><button type="button" onClick={()=>navigate('overview')}>Ir para a visão geral <ArrowRight size={15}/></button></section><section className="help-section"><div className="help-section-heading"><div><small>PRIMEIROS PASSOS</small><h2>O essencial, sem complicações</h2></div><span>4 ações rápidas</span></div><div className="help-guide-grid">{guides.map(({icon:Icon,title,text,action,onClick})=><article className="help-guide-card" key={title}><span><Icon/></span><h3>{title}</h3><p>{text}</p><button type="button" onClick={onClick}>{action}<ArrowRight size={14}/></button></article>)}</div></section><div className="help-lower-grid"><section className="help-section help-faq"><div className="help-section-heading"><div><small>DÚVIDAS FREQUENTES</small><h2>Respostas rápidas</h2></div></div><div>{questions.map(([question,answer])=><details key={question}><summary>{question}<ChevronDown size={16}/></summary><p>{answer}</p></details>)}</div></section><aside className="help-side-card"><span><WalletCards/></span><small>BOA PRÁTICA</small><h3>Revê o teu mês regularmente</h3><p>Confirma movimentos e categorias antes de analisar o orçamento. Dados consistentes tornam a visão financeira mais útil.</p><button type="button" onClick={()=>navigate('expenses')}>Ver movimentos <ArrowRight size={14}/></button><div><ShieldCheck size={14}/><span>A Fings mostra apenas os dados do agregado selecionado.</span></div></aside></div></div>
 }
 
 function PeriodSelect({ label, value, onChange, max }: { label: string; value: string; onChange: (value: string) => void; max?:string }) {
@@ -759,7 +778,7 @@ function App() {
     if(sessionToken)sessionStorage.removeItem('fings_token')
     return persistedToken||sessionToken||''
   })
-  const [view,setView]=useState<View>('overview');const [modal,setModal]=useState<Modal>(null);const [mobileOpen,setMobileOpen]=useState(false)
+  const [view,setView]=useState<View>(viewFromLocation);const [modal,setModal]=useState<Modal>(null);const [mobileOpen,setMobileOpen]=useState(false)
   const [user,setUser]=useState<User>()
   const [period,setPeriod]=useState(initialPeriod)
   const [movementPeriod,setMovementPeriod]=useState(initialPeriod)
@@ -769,6 +788,8 @@ function App() {
   const [movementCategoryId,setMovementCategoryId]=useState<string>()
   const [creatingRecurring,setCreatingRecurring]=useState(false)
   const [editingRecurring,setEditingRecurring]=useState<RecurringExpense|null>(null)
+  const [settingsInitialTab,setSettingsInitialTab]=useState<'profile'|'notifications'>('profile')
+  const [notificationExpenseId,setNotificationExpenseId]=useState(()=>new URLSearchParams(window.location.search).get('expenseId')||undefined)
   const authenticated=!!token
   const householdId=household?.id||''
   const periodLabel=new Intl.DateTimeFormat('pt-PT',{month:'long',year:'numeric'}).format(new Date(period.year,period.month-1,1))
@@ -780,10 +801,23 @@ function App() {
   useEffect(()=>{if(!token||!household||view!=='expenses')return;setMovementLoading(true);const month=String(movementPeriod.month).padStart(2,'0');const from=`${movementPeriod.year}-${month}-01`;const to=`${movementPeriod.year}-${month}-${String(new Date(movementPeriod.year,movementPeriod.month,0).getDate()).padStart(2,'0')}`;api.expenses(household.id,from,to,token).then(setMovementExpenses).catch(e=>{setMovementExpenses([]);setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar os movimentos.')}).finally(()=>setMovementLoading(false))},[household,token,view,movementPeriod,dataRevision])
   const title=useMemo(()=>({overview:'Visão geral',expenses:'Movimentos',budgets:'Orçamentos',recurring:'Recorrentes',help:'Ajuda',settings:'Definições'})[view],[view]);useEffect(()=>{document.title=`${title} — Fings`},[title])
   function login(t:string){localStorage.setItem('fings_token',t);sessionStorage.removeItem('fings_token');setToken(t)}
-  function logout(){localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setView('overview')}
+  async function logout(){try{await removeCurrentPushSubscription(token)}finally{localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setView('overview')}}
   function changePeriod(offset:number){setPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
   function changeMovementPeriod(offset:number){setMovementCategoryId(undefined);setMovementPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
   function openCategoryMovements(categoryId:string){setMovementPeriod(period);setMovementCategoryId(categoryId);setView('expenses')}
+  function openNotificationSettings(){setSettingsInitialTab('notifications');setView('settings')}
+  function openNotificationAction(actionUrl?:string|null,notificationHouseholdId?:string|null){
+    if(notificationHouseholdId){const target=households.find(item=>item.id===notificationHouseholdId);if(target)setHousehold(target)}
+    if(!actionUrl)return
+    try{
+      const url=new URL(actionUrl,window.location.origin)
+      const requested=url.searchParams.get('view')
+      setNotificationExpenseId(url.searchParams.get('expenseId')||undefined)
+      const nextView:View|undefined=requested==='expenses'?'expenses':requested==='budget'||requested==='budgets'?'budgets':requested==='recurring'?'recurring':requested==='settings'?'settings':requested==='help'?'help':requested==='overview'?'overview':undefined
+      if(nextView)setView(nextView)
+      window.history.replaceState({},'',url.pathname)
+    }catch{setView('overview')}
+  }
   async function refreshOverview(){
     if(!token||!household||overviewRefreshing)return
     setOverviewRefreshing(true);setLoadError('')
@@ -797,7 +831,7 @@ function App() {
   return <div className="app-shell">
     <Sidebar view={view} setView={setView} mobileOpen={mobileOpen} close={()=>setMobileOpen(false)} onLogout={logout}/>
     <div className="app-main">
-      <Topbar user={user} household={household} households={households} setHousehold={setHousehold} onMenu={()=>setMobileOpen(true)} onLogout={logout}/>
+      <Topbar user={user} household={household} households={households} setHousehold={setHousehold} onMenu={()=>setMobileOpen(true)} onLogout={logout} token={token} onNotificationNavigate={openNotificationAction} onNotificationSettings={openNotificationSettings}/>
       <main className="content">
         {loadError&&<div className="page-error">{loadError}</div>}
         {loading?<div className="page-loader"><LoaderCircle className="spin"/><span>A organizar as tuas finanças…</span></div>:<>
@@ -818,11 +852,12 @@ function App() {
             }}
             selectedCategoryId={movementCategoryId}
             onCategoryChange={setMovementCategoryId}
+            focusExpenseId={notificationExpenseId}
           />}
           {view==='budgets'&&<BudgetsPage dashboard={dashboard} budgets={budgets} openModal={setModal}/>} 
           {view==='recurring'&&<RecurringPage items={recurring} categories={categories} onCreate={()=>setCreatingRecurring(true)} onEdit={setEditingRecurring} onMaterialize={async item=>{const result=await api.materializeRecurringExpense(householdId,item.id,token);setRecurring(current=>current.map(existing=>existing.id===item.id?{...existing,nextOccurrenceDate:result.nextOccurrenceDate,isActive:result.isActive}:existing));setDataRevision(current=>current+1);return result}}/>}
-          {view==='help'&&<HelpPage navigate={setView} openModal={setModal}/>}
-          {view==='settings'&&household&&<SettingsPage user={user} categories={categories} household={household} token={token} onUserUpdated={setUser} onCategoriesChanged={setCategories}/>}
+          {view==='help'&&<HelpPage navigate={setView} openModal={setModal} openNotificationSettings={openNotificationSettings}/>}
+          {view==='settings'&&household&&<SettingsPage key={`${household.id}-${settingsInitialTab}`} user={user} categories={categories} household={household} token={token} onUserUpdated={setUser} onCategoriesChanged={setCategories} initialTab={settingsInitialTab}/>}
         </>}
       </main>
       <PoweredBy className="app-powered" />
