@@ -150,6 +150,7 @@ export const api = {
   acceptHouseholdInvitation: (code: string, token: string) => request<HouseholdMember>(`/api/household-invitations/${encodeURIComponent(code)}/accept`, { method: 'POST' }, token),
   categories: (householdId: string, token: string) => request<Category[]>(`/api/households/${householdId}/categories`, {}, token),
   expenses: (householdId: string, from: string, to: string, token: string) => request<Expense[]>(`/api/households/${householdId}/expenses?from=${from}&to=${to}`, {}, token),
+  expensesBySubcategory: (householdId: string, subcategoryId: string, from: string, to: string, token: string) => request<Expense[]>(`/api/households/${householdId}/expenses/subcategories/${encodeURIComponent(subcategoryId)}?from=${from}&to=${to}`, {}, token),
   expenseSuggestions: (householdId: string, token: string) => request<ExpenseSuggestion[]>(`/api/households/${householdId}/expenses/suggestions`, {}, token),
   dashboard: (householdId: string, year: number, month: number, token: string) => request<Dashboard>(`/api/households/${householdId}/dashboard/${year}/${month}`, {}, token),
   budgets: (householdId: string, token: string) => request<Budget[]>(`/api/households/${householdId}/budgets`, {}, token),
