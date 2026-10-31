@@ -270,10 +270,27 @@ function BalanceChart({dashboard,expenses}:{dashboard:Dashboard;expenses:Expense
 }
 
 function Overview({ dashboard, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh, onCategorySelect }: { dashboard?: Dashboard; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void; onCategorySelect:(categoryId:string)=>void }) {
+  const [spendingBreakdown,setSpendingBreakdown]=useState<'categories'|'subcategories'>('categories')
   const pct = dashboard?.budget ? Math.min(100, dashboard.confirmedExpenses / dashboard.budget * 100) : null
   const savingRate=dashboard?.plannedIncome ? (dashboard.plannedIncome-dashboard.confirmedExpenses)/dashboard.plannedIncome*100 : null
   const dashboardCategories=dashboard?.categories||[]
-  const maxBar = Math.max(...dashboardCategories.map(c => c.spent), 1)
+  const dashboardSubcategories=useMemo(()=>{
+    const grouped=new Map<string,{categoryId:string;subcategoryName:string;spent:number}>()
+    expenses.filter(expense=>expense.status===2).forEach(expense=>{
+      const lines=expense.lines.length?expense.lines:[{categoryId:expense.categoryId,subcategoryId:expense.subcategoryId,subcategoryName:expense.subcategoryName,amount:expense.amount}]
+      lines.forEach(line=>{
+        const key=line.subcategoryId||`${line.categoryId}:none`
+        const current=grouped.get(key)||{categoryId:line.categoryId,subcategoryName:line.subcategoryName||'Sem subcategoria',spent:0}
+        current.spent+=line.amount
+        grouped.set(key,current)
+      })
+    })
+    return [...grouped.entries()].map(([key,item])=>({key,...item})).sort((a,b)=>b.spent-a.spent)
+  },[expenses])
+  const spendingBars=spendingBreakdown==='categories'
+    ?dashboardCategories.map(item=>({key:item.categoryId,categoryId:item.categoryId,label:item.categoryName,spent:item.spent}))
+    :dashboardSubcategories.map(item=>({key:item.key,categoryId:item.categoryId,label:item.subcategoryName,spent:item.spent}))
+  const maxBar = Math.max(...spendingBars.map(item => item.spent), 1)
   return <>
     <div className="page-heading"><div><p className="greeting">Olá, {user.name.trim().split(/\s+/)[0]} <span>👋</span></p><h1>Vamos cuidar das tuas finanças.</h1></div><div className="heading-actions"><button className="secondary-button" onClick={() => openModal('receipt')}><Camera size={17} /> Digitalizar talão</button><button className="primary-button" onClick={() => openModal('expense')}><Plus size={17} /> Nova despesa</button></div></div>
     <div className="overview-period"><MonthNavigator label={periodLabel} onChange={changePeriod}/><button type="button" className={`overview-refresh ${refreshing?'refreshing':''}`} aria-label="Atualizar visão geral" onClick={onRefresh} disabled={refreshing}><span><RefreshCw size={16}/></span><div><strong>{refreshing?'A atualizar…':'Atualizar'}</strong><small>Sincronizar dados</small></div></button></div>
@@ -296,8 +313,10 @@ function Overview({ dashboard, expenses, categories, user, periodLabel, changePe
     </section>
     <section className="lower-grid">
       <div className="panel spending-panel">
-        <div className="panel-head"><div><h3>Despesas por categoria</h3><p>Onde estás a gastar este mês</p></div><button className="more-button"><MoreHorizontal /></button></div>
-        {dashboardCategories.length?<div className="bar-chart">{dashboardCategories.map((c, i) => { const cat = categories.find(x => x.id === c.categoryId); return <button type="button" className="bar-column" key={c.categoryId} aria-label={`Ver movimentos da categoria ${c.categoryName}`} onClick={()=>onCategorySelect(c.categoryId)}><div className="bar-value">{compactEuro.format(c.spent)}</div><div className="bar-track"><div style={{ height: `${Math.max(12, c.spent / maxBar * 100)}%`, background: cat?.color || ['#6d5dfc','#ff9f43','#2ec4b6','#ff5c8a'][i%4] }} /></div><span>{c.categoryName}</span></button>})}</div>:<DataUnavailable message="Ainda não existem despesas categorizadas neste período."/>}
+        <div className="panel-head"><div><h3>Despesas por {spendingBreakdown==='categories'?'categoria':'subcategoria'}</h3><p>Onde estás a gastar este mês</p></div><div className="spending-breakdown-toggle" role="group" aria-label="Agrupar despesas por"><button type="button" className={spendingBreakdown==='categories'?'active':''} aria-pressed={spendingBreakdown==='categories'} onClick={()=>setSpendingBreakdown('categories')}>Categorias</button><button type="button" className={spendingBreakdown==='subcategories'?'active':''} aria-pressed={spendingBreakdown==='subcategories'} onClick={()=>setSpendingBreakdown('subcategories')}>Subcategorias</button></div></div>
+        {spendingBars.length?<div className="bar-chart">{spendingBars.map((item, i) => { const cat = categories.find(category => category.id === item.categoryId); return <button type="button" className="bar-column" key={item.key} aria-label={`Ver movimentos de ${item.label}`} onClick={()=>onCategorySelect(item.categoryId)}><div className="bar-value">{compactEuro.format(item.spent)}</div><div className="bar-track"><div style={{ height: `${Math.max(12, item.spent / maxBar * 100)}%`, background: cat?.color || ['#6d5dfc','#ff9f43','#2ec4b6','#ff5c8a'][i%4] }} /></div><span>{item.label}</span></button>})}</div>:
+          <DataUnavailable message={`Ainda não existem despesas ${spendingBreakdown==='categories'?'categorizadas':'com subcategorias'} neste período.`}/>
+        }
       </div>
       <div className="panel transactions-panel">
         <div className="panel-head"><div><h3>Movimentos recentes</h3><p>As últimas despesas registadas</p></div><button className="text-button" onClick={() => setView('expenses')}>Ver todos <ChevronRight size={15} /></button></div>

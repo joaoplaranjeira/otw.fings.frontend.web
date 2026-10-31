@@ -369,4 +369,8 @@
   .receipt-result.editing .receipt-line-editor{padding:9px}
 }
 
+.spending-breakdown-toggle{display:flex;gap:3px;padding:3px;border-radius:9px;background:#f0eff4}
+.spending-breakdown-toggle button{height:27px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:#85828e;font-size:8px;font-weight:700}
+.spending-breakdown-toggle button.active{background:#fff;color:#5c4dec;box-shadow:0 2px 7px #29233812}
+
 @media(min-width:851px){.help-guide-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
