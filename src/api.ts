@@ -71,7 +71,7 @@ export type ExpenseLine = {
 export type Expense = {
   id: string; date: string; amount: number; description: string; categoryId: string; categoryName: string
   subcategoryId?: string | null; subcategoryName?: string | null; merchantName?: string | null; merchantTaxNumber?: string | null
-  origin: number; status: number; lines: ExpenseLine[]
+  origin: number | 'Manual' | 'Recurring' | 'Receipt'; status: number | 'Planned' | 'Confirmed' | 'Cancelled'; lines: ExpenseLine[]
 }
 export type ExpenseSuggestion = {
   description: string; merchantName: string; merchantTaxNumber?: string | null; categoryId: string; categoryName: string

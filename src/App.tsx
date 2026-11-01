@@ -274,7 +274,7 @@ function BalanceChart({dashboard,expenses}:{dashboard:Dashboard;expenses:Expense
   const now=new Date();const isCurrentMonth=now.getFullYear()===year&&now.getMonth()+1===month
   const lastDay=isCurrentMonth?Math.min(now.getDate(),daysInMonth):daysInMonth
   const spentByDay=Array.from({length:daysInMonth+1},()=>0)
-  expenses.filter(expense=>expense.status===2).forEach(expense=>{const match=expense.date.match(/^(\d{4})-(\d{2})-(\d{2})/);if(match&&Number(match[1])===year&&Number(match[2])===month)spentByDay[Number(match[3])]+=expense.amount})
+  expenses.filter(isConfirmedExpense).forEach(expense=>{const match=expense.date.match(/^(\d{4})-(\d{2})-(\d{2})/);if(match&&Number(match[1])===year&&Number(match[2])===month)spentByDay[Number(match[3])]+=expense.amount})
   let available=dashboard.budget
   const points=Array.from({length:lastDay},(_,index)=>{const day=index+1;available-=spentByDay[day];return {day,value:available,spent:spentByDay[day]}})
   const width=620,height=112,top=10,bottom=84,left=8,right=612
@@ -294,6 +294,8 @@ function expenseAmountForCategory(expense:Expense,categoryId:string){
   if(expense.lines?.length)return expense.lines.filter(line=>line.categoryId===categoryId).reduce((sum,line)=>sum+line.amount,0)
   return expense.categoryId===categoryId?expense.amount:0
 }
+
+function isConfirmedExpense(expense:Expense){return expense.status===2||expense.status==='Confirmed'}
 
 function MonthlyComparisonChart({values,color}:{values:{month:string;total:number}[];color:string}){
   const max=Math.max(...values.map(item=>item.total),1)
@@ -328,11 +330,12 @@ function MonthlyExpenseComparison({householdId,token,categories,categoryMode=fal
 
   const values=useMemo(()=>monthsInRange(range.from,range.to).map(month=>({
     month,
-    total:items.filter(expense=>expense.status===2&&expense.date.startsWith(month)).reduce((sum,expense)=>sum+(categoryMode?expenseAmountForCategory(expense,categoryId):expense.amount),0),
+    total:items.filter(expense=>isConfirmedExpense(expense)&&expense.date.startsWith(month)).reduce((sum,expense)=>sum+(categoryMode?expenseAmountForCategory(expense,categoryId):expense.amount),0),
   })),[items,range,categoryMode,categoryId])
   const total=values.reduce((sum,item)=>sum+item.total,0)
   const average=values.length?total/values.length:0
   const hasExpenses=values.some(item=>item.total>0)
+  const emptyMessage=`Não existem despesas confirmadas entre ${formatDate(range.from)} e ${formatDate(range.to)}${categoryMode&&selectedCategory?` na categoria ${selectedCategory.name}`:''}. Para incluir o mês atual, altera a data final e aplica novamente o filtro.`
 
   function applyFilters(event:FormEvent){
     event.preventDefault();setError('')
@@ -351,7 +354,7 @@ function MonthlyExpenseComparison({householdId,token,categories,categoryMode=fal
       <button className="secondary-button" disabled={loading}>{loading?<LoaderCircle className="spin" size={15}/>:<TrendingUp size={15}/>} Aplicar</button>
     </form>
     {error&&<div className="comparison-error"><TriangleAlert size={15}/>{error}</div>}
-    {loading?<div className="comparison-loading"><LoaderCircle className="spin"/><span>A calcular a comparação…</span></div>:categoryMode&&!categoryId?<DataUnavailable message="Seleciona uma categoria e aplica o filtro para apresentar o gráfico."/>:values.length&&!hasExpenses?<DataUnavailable message="Não existem despesas confirmadas para os filtros selecionados."/>:values.length?<MonthlyComparisonChart values={values} color={selectedCategory?.color||(categoryMode?'#ff725e':'#6d5dfc')}/>:<DataUnavailable message="O intervalo selecionado não contém meses para comparar."/>}
+    {loading?<div className="comparison-loading"><LoaderCircle className="spin"/><span>A calcular a comparação…</span></div>:categoryMode&&!categoryId?<DataUnavailable message="Seleciona uma categoria e aplica o filtro para apresentar o gráfico."/>:values.length&&!hasExpenses?<DataUnavailable message={emptyMessage}/>:values.length?<MonthlyComparisonChart values={values} color={selectedCategory?.color||(categoryMode?'#ff725e':'#6d5dfc')}/>:<DataUnavailable message="O intervalo selecionado não contém meses para comparar."/>}
   </article>
 }
 
@@ -515,7 +518,7 @@ function ImportExpensesModal({householdId,token,categories,destination,onClose,o
     const lastDay=new Date(year,month,0).getDate()
     setLoading(true);setError('');setFeedback('');setSelectedIds([])
     api.expenses(householdId,`${sourceMonth}-01`,`${sourceMonth}-${String(lastDay).padStart(2,'0')}`,token)
-      .then(expenses=>{if(active)setItems(expenses.filter(expense=>expense.status===2))})
+      .then(expenses=>{if(active)setItems(expenses.filter(isConfirmedExpense))})
       .catch(reason=>{if(active){setItems([]);setError(reason instanceof ApiError?reason.message:'Não foi possível carregar as despesas deste mês.')}})
       .finally(()=>{if(active)setLoading(false)})
     return()=>{active=false}
