@@ -65,6 +65,25 @@ function DateInput({value,onChange,required=false,min,max}:{value:string;onChang
   return <input ref={inputRef} className="date-input" type="text" inputMode="numeric" autoComplete="off" required={required} value={display} placeholder="DD/MM/AAAA" aria-label="Data no formato dia/mês/ano" onChange={event=>change(event.currentTarget.value)} onBlur={()=>{const iso=parseDisplay(display);if(iso)setDisplay(formatDate(iso))}}/>
 }
 
+function defaultComparisonRange(){
+  const now=new Date();const lastCompletedMonth=new Date(now.getFullYear(),now.getMonth(),0)
+  const rangeYear=lastCompletedMonth.getFullYear()
+  const from=`${rangeYear}-01-01`
+  const to=`${rangeYear}-${String(lastCompletedMonth.getMonth()+1).padStart(2,'0')}-${String(lastCompletedMonth.getDate()).padStart(2,'0')}`
+  return {from,to}
+}
+
+function monthsInRange(from:string,to:string){
+  const [fromYear,fromMonth]=from.split('-').map(Number);const [toYear,toMonth]=to.split('-').map(Number)
+  if(!fromYear||!fromMonth||!toYear||!toMonth||from>to)return []
+  const months:string[]=[]
+  for(let year=fromYear,month=fromMonth;year<toYear||year===toYear&&month<=toMonth;){
+    months.push(`${year}-${String(month).padStart(2,'0')}`)
+    month+=1;if(month===13){month=1;year+=1}
+  }
+  return months
+}
+
 function decimalCharacters(value:string){const clean=value.replace(/,/g,'.').replace(/[^0-9.]/g,'');const dot=clean.indexOf('.');return dot<0?clean:`${clean.slice(0,dot+1)}${clean.slice(dot+1).replace(/\./g,'')}`}
 
 function DecimalInput({value,onChange,currency=false,required=false,placeholder='0.00'}:{value?:number|null;onChange:(value:number|null)=>void;currency?:boolean;required?:boolean;placeholder?:string}) {
@@ -269,18 +288,85 @@ function BalanceChart({dashboard,expenses}:{dashboard:Dashboard;expenses:Expense
   return <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-labelledby="balance-chart-title balance-chart-description"><title id="balance-chart-title">Evolução diária do saldo disponível</title><desc id="balance-chart-description">O saldo começou em {euro.format(dashboard.budget)} e está em {euro.format(points.at(-1)?.value??dashboard.budget)} no dia {lastDay}.</desc><defs><linearGradient id="balance-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7565fc" stopOpacity=".24"/><stop offset="100%" stopColor="#7565fc" stopOpacity=".02"/></linearGradient></defs><line className="balance-grid-line" x1={left} y1={bottom} x2={right} y2={bottom}/><path className="balance-area" d={areaPath}/><path className="balance-line" d={linePath}/>{expensePoints.map(point=><circle className="balance-expense-point" key={point.day} cx={x(point.day)} cy={y(point.value)} r="3"><title>Dia {point.day}: {euro.format(point.value)} disponíveis após {euro.format(point.spent)} em despesas</title></circle>)}<circle className="balance-current-point-halo" cx={x(lastDay)} cy={y(points.at(-1)?.value??dashboard.budget)} r="7"/><circle className="balance-current-point" cx={x(lastDay)} cy={y(points.at(-1)?.value??dashboard.budget)} r="3.5"><title>Saldo disponível: {euro.format(points.at(-1)?.value??dashboard.budget)}</title></circle>{labelDays.map(day=><text className="balance-axis-label" key={day} x={x(day)} y="105" textAnchor={day===1?'start':day===lastDay?'end':'middle'}>{day}</text>)}</svg>
 }
 
-function Overview({ dashboard, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh, onCategorySelect }: { dashboard?: Dashboard; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void; onCategorySelect:(categoryId:string)=>void }) {
+type ComparisonRange={from:string;to:string}
+
+function expenseAmountForCategory(expense:Expense,categoryId:string){
+  if(expense.lines?.length)return expense.lines.filter(line=>line.categoryId===categoryId).reduce((sum,line)=>sum+line.amount,0)
+  return expense.categoryId===categoryId?expense.amount:0
+}
+
+function MonthlyComparisonChart({values,color}:{values:{month:string;total:number}[];color:string}){
+  const max=Math.max(...values.map(item=>item.total),1)
+  const monthFormatter=new Intl.DateTimeFormat('pt-PT',{month:'short',year:values.length>12?'2-digit':undefined})
+  return <div className="monthly-comparison-chart" role="img" aria-label={`Comparação mensal de despesas: ${values.map(item=>`${monthFormatter.format(new Date(`${item.month}-01T12:00:00`))}, ${euro.format(item.total)}`).join('; ')}`}>
+    {values.map(item=><div className="monthly-comparison-column" key={item.month} title={`${monthFormatter.format(new Date(`${item.month}-01T12:00:00`))}: ${euro.format(item.total)}`}>
+      <strong>{compactEuro.format(item.total)}</strong>
+      <div><i style={{height:`${item.total?Math.max(5,item.total/max*100):0}%`,background:color}}/></div>
+      <span>{monthFormatter.format(new Date(`${item.month}-01T12:00:00`)).replace('.','')}</span>
+    </div>)}
+  </div>
+}
+
+function MonthlyExpenseComparison({householdId,token,categories,categoryMode=false,revision}:{householdId:string;token:string;categories:Category[];categoryMode?:boolean;revision:number}){
+  const initialRange=useMemo(defaultComparisonRange,[])
+  const [draft,setDraft]=useState<ComparisonRange>(initialRange)
+  const [range,setRange]=useState<ComparisonRange>(initialRange)
+  const [draftCategoryId,setDraftCategoryId]=useState('')
+  const [categoryId,setCategoryId]=useState('')
+  const [items,setItems]=useState<Expense[]>([])
+  const [loading,setLoading]=useState(false)
+  const [error,setError]=useState('')
+  const activeCategories=categories.filter(category=>category.isActive)
+  const selectedCategory=categories.find(category=>category.id===categoryId)
+
+  useEffect(()=>{
+    if(!householdId||!token||categoryMode&&!categoryId){setItems([]);return}
+    let ignore=false;setLoading(true);setError('')
+    api.expenses(householdId,range.from,range.to,token).then(result=>{if(!ignore)setItems(result)}).catch(reason=>{if(!ignore){setItems([]);setError(reason instanceof ApiError?reason.message:'Não foi possível carregar a comparação mensal.')}}).finally(()=>{if(!ignore)setLoading(false)})
+    return()=>{ignore=true}
+  },[householdId,token,range,categoryMode,categoryId,revision])
+
+  const values=useMemo(()=>monthsInRange(range.from,range.to).map(month=>({
+    month,
+    total:items.filter(expense=>expense.status===2&&expense.date.startsWith(month)).reduce((sum,expense)=>sum+(categoryMode?expenseAmountForCategory(expense,categoryId):expense.amount),0),
+  })),[items,range,categoryMode,categoryId])
+  const total=values.reduce((sum,item)=>sum+item.total,0)
+  const average=values.length?total/values.length:0
+  const hasExpenses=values.some(item=>item.total>0)
+
+  function applyFilters(event:FormEvent){
+    event.preventDefault();setError('')
+    if(!draft.from||!draft.to){setError('Indica a data inicial e a data final.');return}
+    if(draft.from>draft.to){setError('A data final deve ser igual ou posterior à data inicial.');return}
+    if(categoryMode&&!draftCategoryId){setError('Seleciona uma categoria para comparar.');return}
+    setRange({...draft});if(categoryMode)setCategoryId(draftCategoryId)
+  }
+
+  return <article className="panel monthly-comparison-panel">
+    <header className="monthly-comparison-head"><div><span className="card-label">ANÁLISE HISTÓRICA</span><h3>{categoryMode?'Despesas mensais por categoria':'Comparação mensal de despesas'}</h3><p>{categoryMode?(selectedCategory?`Evolução dos gastos em ${selectedCategory.name}.`:'Escolhe uma categoria para analisar a sua evolução.'):'Compara os gastos confirmados entre os meses.'}</p></div>{hasExpenses&&<div className="monthly-comparison-summary"><span><small>TOTAL</small><strong>{compactEuro.format(total)}</strong></span><span><small>MÉDIA/MÊS</small><strong>{compactEuro.format(average)}</strong></span></div>}</header>
+    <form className="monthly-comparison-filters" onSubmit={applyFilters}>
+      {categoryMode&&<label className="comparison-category">Categoria<select value={draftCategoryId} onChange={event=>setDraftCategoryId(event.target.value)}><option value="">Selecionar categoria</option>{activeCategories.map(category=><option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}
+      <label>Data inicial<DateInput required value={draft.from} onChange={from=>setDraft(current=>({...current,from}))}/></label>
+      <label>Data final<DateInput required value={draft.to} onChange={to=>setDraft(current=>({...current,to}))}/></label>
+      <button className="secondary-button" disabled={loading}>{loading?<LoaderCircle className="spin" size={15}/>:<TrendingUp size={15}/>} Aplicar</button>
+    </form>
+    {error&&<div className="comparison-error"><TriangleAlert size={15}/>{error}</div>}
+    {loading?<div className="comparison-loading"><LoaderCircle className="spin"/><span>A calcular a comparação…</span></div>:categoryMode&&!categoryId?<DataUnavailable message="Seleciona uma categoria e aplica o filtro para apresentar o gráfico."/>:values.length&&!hasExpenses?<DataUnavailable message="Não existem despesas confirmadas para os filtros selecionados."/>:values.length?<MonthlyComparisonChart values={values} color={selectedCategory?.color||(categoryMode?'#ff725e':'#6d5dfc')}/>:<DataUnavailable message="O intervalo selecionado não contém meses para comparar."/>}
+  </article>
+}
+
+function Overview({ dashboard, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh, onCategorySelect, householdId, token, dataRevision }: { dashboard?: Dashboard; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void; onCategorySelect:(categoryId:string,subcategoryId?:string)=>void;householdId:string;token:string;dataRevision:number }) {
   const [spendingBreakdown,setSpendingBreakdown]=useState<'categories'|'subcategories'>('categories')
   const pct = dashboard?.budget ? Math.min(100, dashboard.confirmedExpenses / dashboard.budget * 100) : null
   const savingRate=dashboard?.plannedIncome ? (dashboard.plannedIncome-dashboard.confirmedExpenses)/dashboard.plannedIncome*100 : null
   const dashboardCategories=dashboard?.categories||[]
   const dashboardSubcategories=useMemo(()=>{
-    const grouped=new Map<string,{categoryId:string;subcategoryName:string;spent:number}>()
+    const grouped=new Map<string,{categoryId:string;subcategoryId?:string;subcategoryName:string;spent:number}>()
     expenses.forEach(expense=>{
       const lines=expense.lines?.length?expense.lines:[{categoryId:expense.categoryId,subcategoryId:expense.subcategoryId,subcategoryName:expense.subcategoryName,amount:expense.amount}]
       lines.forEach(line=>{
         const key=line.subcategoryId||`${line.categoryId}:none`
-        const current=grouped.get(key)||{categoryId:line.categoryId,subcategoryName:line.subcategoryName||'Sem subcategoria',spent:0}
+        const current=grouped.get(key)||{categoryId:line.categoryId,subcategoryId:line.subcategoryId||undefined,subcategoryName:line.subcategoryName||'Sem subcategoria',spent:0}
         current.spent+=line.amount
         grouped.set(key,current)
       })
@@ -288,8 +374,8 @@ function Overview({ dashboard, expenses, categories, user, periodLabel, changePe
     return [...grouped.entries()].map(([key,item])=>({key,...item})).sort((a,b)=>b.spent-a.spent)
   },[expenses])
   const spendingBars=spendingBreakdown==='categories'
-    ?dashboardCategories.map(item=>({key:item.categoryId,categoryId:item.categoryId,label:item.categoryName,spent:item.spent}))
-    :dashboardSubcategories.map(item=>({key:item.key,categoryId:item.categoryId,label:item.subcategoryName,spent:item.spent}))
+    ?dashboardCategories.map(item=>({key:item.categoryId,categoryId:item.categoryId,subcategoryId:undefined,label:item.categoryName,spent:item.spent}))
+    :dashboardSubcategories.map(item=>({key:item.key,categoryId:item.categoryId,subcategoryId:item.subcategoryId,label:item.subcategoryName,spent:item.spent}))
   const maxBar = Math.max(...spendingBars.map(item => item.spent), 1)
   return <>
     <div className="page-heading"><div><p className="greeting">Olá, {user.name.trim().split(/\s+/)[0]} <span>👋</span></p><h1>Vamos cuidar das tuas finanças.</h1></div><div className="heading-actions"><button className="secondary-button" onClick={() => openModal('receipt')}><Camera size={17} /> Digitalizar talão</button><button className="primary-button" onClick={() => openModal('expense')}><Plus size={17} /> Nova despesa</button></div></div>
@@ -314,7 +400,7 @@ function Overview({ dashboard, expenses, categories, user, periodLabel, changePe
     <section className="lower-grid">
       <div className="panel spending-panel">
         <div className="panel-head"><div><h3>Despesas por {spendingBreakdown==='categories'?'categoria':'subcategoria'}</h3><p>Onde estás a gastar este mês</p></div><div className="spending-breakdown-toggle" role="group" aria-label="Agrupar despesas por"><button type="button" className={spendingBreakdown==='categories'?'active':''} aria-pressed={spendingBreakdown==='categories'} onClick={()=>setSpendingBreakdown('categories')}>Categorias</button><button type="button" className={spendingBreakdown==='subcategories'?'active':''} aria-pressed={spendingBreakdown==='subcategories'} onClick={()=>setSpendingBreakdown('subcategories')}>Subcategorias</button></div></div>
-        {spendingBars.length?<div className="bar-chart">{spendingBars.map((item, i) => { const cat = categories.find(category => category.id === item.categoryId); return <button type="button" className="bar-column" key={item.key} aria-label={`Ver movimentos de ${item.label}`} onClick={()=>onCategorySelect(item.categoryId)}><div className="bar-value">{compactEuro.format(item.spent)}</div><div className="bar-track"><div style={{ height: `${Math.max(12, item.spent / maxBar * 100)}%`, background: cat?.color || ['#6d5dfc','#ff9f43','#2ec4b6','#ff5c8a'][i%4] }} /></div><span>{item.label}</span></button>})}</div>:
+        {spendingBars.length?<div className="bar-chart">{spendingBars.map((item, i) => { const cat = categories.find(category => category.id === item.categoryId); return <button type="button" className="bar-column" key={item.key} aria-label={`Ver movimentos de ${item.label}`} onClick={()=>onCategorySelect(item.categoryId,item.subcategoryId)}><div className="bar-value">{compactEuro.format(item.spent)}</div><div className="bar-track"><div style={{ height: `${Math.max(12, item.spent / maxBar * 100)}%`, background: cat?.color || ['#6d5dfc','#ff9f43','#2ec4b6','#ff5c8a'][i%4] }} /></div><span>{item.label}</span></button>})}</div>:
           <DataUnavailable message={`Ainda não existem despesas ${spendingBreakdown==='categories'?'categorizadas':'com subcategorias'} neste período.`}/>
         }
       </div>
@@ -322,6 +408,10 @@ function Overview({ dashboard, expenses, categories, user, periodLabel, changePe
         <div className="panel-head"><div><h3>Movimentos recentes</h3><p>As últimas despesas registadas</p></div><button className="text-button" onClick={() => setView('expenses')}>Ver todos <ChevronRight size={15} /></button></div>
         <div className="transaction-list">{expenses.length?expenses.slice(0, 5).map(expense => <Transaction key={expense.id} expense={expense} categories={categories} />):<DataUnavailable message="Ainda não existem movimentos neste período."/>}</div>
       </div>
+    </section>
+    <section className="comparison-grid">
+      <MonthlyExpenseComparison key={`${householdId}-all`} householdId={householdId} token={token} categories={categories} revision={dataRevision}/>
+      <MonthlyExpenseComparison key={`${householdId}-category`} householdId={householdId} token={token} categories={categories} categoryMode revision={dataRevision}/>
     </section>
     <section className="insight-banner"><span className="insight-icon"><Sparkles /></span><div><span className="card-label">INSIGHT FINGS</span><h3>Dados insuficientes para gerar uma análise.</h3><p>São necessários dados históricos de vários períodos para calcular tendências e projeções fiáveis.</p></div></section>
   </>
@@ -828,7 +918,7 @@ function App() {
   function changeMovementPeriod(offset:number){setMovementCategoryId(undefined);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
   function changeMovementCategory(categoryId?:string){setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementCategoryId(categoryId)}
   function changeMovementSubcategory(subcategoryId?:string){setMovementCategoryId(undefined);setMovementSubcategoryId(subcategoryId);if(!subcategoryId)setMovementSubcategoryExpenses(null)}
-  function openCategoryMovements(categoryId:string){setMovementPeriod(period);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementCategoryId(categoryId);setView('expenses')}
+  function openCategoryMovements(categoryId:string,subcategoryId?:string){setMovementPeriod(period);setMovementSubcategoryId(subcategoryId);setMovementSubcategoryExpenses(null);setMovementCategoryId(categoryId);setView('expenses')}
   function openNotificationSettings(){setSettingsInitialTab('notifications');setView('settings')}
   function openNotificationAction(actionUrl?:string|null,notificationHouseholdId?:string|null){
     if(notificationHouseholdId){const target=households.find(item=>item.id===notificationHouseholdId);if(target)setHousehold(target)}
@@ -859,7 +949,7 @@ function App() {
       <main className="content">
         {loadError&&<div className="page-error">{loadError}</div>}
         {loading?<div className="page-loader"><LoaderCircle className="spin"/><span>A organizar as tuas finanças…</span></div>:<>
-          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={setModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview} onCategorySelect={openCategoryMovements}/>}
+          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={setModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview} onCategorySelect={openCategoryMovements} householdId={householdId} token={token} dataRevision={dataRevision}/>}
           {view==='expenses'&&<ExpensesPage
             expenses={movementSubcategoryExpenses??movementExpenses}
             allExpenses={movementExpenses}
