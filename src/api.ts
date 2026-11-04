@@ -78,7 +78,7 @@ export type ExpenseSuggestion = {
   subcategoryId?: string | null; subcategoryName?: string | null; occurrenceCount: number; lastOccurrenceDate: string
 }
 export type ExpensePayloadLine = {
-  categoryId: string; subcategoryId?: string | null; description: string
+  categoryId?: string | null; subcategoryId?: string | null; description: string
   quantity?: number | null; unitPrice?: number | null; amount: number
 }
 export type ExpensePayload = {

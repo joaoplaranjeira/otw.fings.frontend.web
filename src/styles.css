@@ -381,10 +381,14 @@
 .split-expense-button.discount{border-color:#edc98f;background:#fff9ef;color:#9b6017}
 .split-expense-button.discount>span small{color:#9c7a4e}
 .expense-with-lines .expense-line{grid-template-columns:minmax(94px,.75fr) minmax(145px,1.65fr) repeat(3,minmax(70px,.62fr)) repeat(2,minmax(105px,.95fr)) 28px}
-.expense-with-lines .expense-line.discount{background:linear-gradient(90deg,#fff8ee,#fff 26%)}
+.expense-with-lines .expense-line.discount{grid-template-columns:minmax(110px,.65fr) minmax(240px,2fr) minmax(130px,.8fr) 28px;background:linear-gradient(90deg,#fff8ee,#fff 26%)}
 .expense-with-lines .expense-line.discount>label:first-child{color:#a76a1e}
 .expense-with-lines .expense-line.discount>label:first-child select{border-color:#efcf9f;background:#fffaf2;color:#8a581b;font-weight:800}
-.expense-with-lines .expense-line.discount label:nth-child(5) input{border-color:#efcf9f;background:#fffaf2;color:#a15f16;font-weight:800}
+.expense-line-value{height:39px;margin-top:5px;border:1px solid #dedee5;border-radius:9px;background:#fff;display:flex;align-items:center;overflow:hidden}
+.expense-line-value>i{padding-left:9px;color:#a15f16;font-size:15px;font-style:normal;font-weight:900}
+.expense-line-value>input{height:37px!important;margin:0!important;border:0!important;box-shadow:none!important}
+.expense-line-value.negative{border-color:#efcf9f;background:#fffaf2}
+.expense-line-value.negative>input{background:#fffaf2;color:#a15f16;font-weight:800}
 .expense-installment.discount{border-color:#f0d3a9;background:#fffaf2}
 .expense-installment.discount .expense-installment-index{background:#ffe8c5;color:#9b6017}
 .expense-installment.discount .expense-installment-amount{color:#a45f14}
@@ -400,7 +404,7 @@
 .expense-lines-footer>div{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
 .expense-lines-footer>div>button{min-height:34px;padding:0 9px;border:0;border-radius:8px;background:#f0eeff;color:#6252ee;display:flex;align-items:center;gap:5px;font-size:8px;font-weight:800}
 .expense-lines-footer>div>button.add-discount{background:#fff0d9;color:#9b6017}
-@media(max-width:750px){.expense-with-lines .expense-line{grid-template-columns:1fr 1fr}.expense-with-lines .expense-line .wide{grid-column:1/3}.expense-lines-footer>div{width:100%}.expense-lines-footer>div>button{flex:1;justify-content:center;min-height:42px}}
+@media(max-width:750px){.expense-with-lines .expense-line,.expense-with-lines .expense-line.discount{grid-template-columns:1fr 1fr}.expense-with-lines .expense-line .wide{grid-column:1/3}.expense-lines-footer>div{width:100%}.expense-lines-footer>div>button{flex:1;justify-content:center;min-height:42px}}
 @media(max-width:560px){.split-expense-actions{grid-template-columns:1fr}.expense-with-lines .expense-line{grid-template-columns:1fr}.expense-with-lines .expense-line .wide,.expense-with-lines .expense-line>button{grid-column:auto}.expense-lines-footer>div{display:grid;grid-template-columns:1fr 1fr}.expense-lines-footer>div>button{min-width:0;padding:0 7px}.receipt-edit-heading{align-items:flex-start;gap:10px;flex-direction:column}.receipt-edit-heading>.receipt-edit-heading-actions{width:100%}.receipt-edit-heading-actions>button{min-height:42px;flex:1;justify-content:center}.receipt-step-title{flex-direction:column}.receipt-step-title>.receipt-step-title-actions{width:100%;display:flex}.receipt-step-title-actions button{min-width:0;justify-content:center;min-height:42px}}
 
 /* monthly expense comparisons */
