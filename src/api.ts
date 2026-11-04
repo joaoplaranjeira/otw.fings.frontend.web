@@ -105,7 +105,7 @@ export type RecurringExpenseMaterialization = { createdCount: number; throughDat
 export type ReceiptParseLine = {
   description: string; quantity?: number | null; unitPrice?: number | null; amount: number
   suggestedCategoryId?: string | null; suggestedCategoryName?: string | null
-  suggestedSubcategoryId?: string | null; suggestedSubcategoryName?: string | null; confidence: number
+  suggestedSubcategoryId?: string | null; suggestedSubcategoryName?: string | null; confidence: number; isDiscount?: boolean
 }
 export type ReceiptParseResult = {
   parseId: string; merchantName?: string | null; merchantTaxNumber?: string | null; documentNumber?: string | null
