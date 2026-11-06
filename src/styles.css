@@ -442,3 +442,13 @@
 @media(max-width:420px){.monthly-comparison-filters,.monthly-comparison-filters:has(.comparison-category){grid-template-columns:1fr}.monthly-comparison-filters .comparison-category,.monthly-comparison-filters button{grid-column:auto}.monthly-comparison-filters input,.monthly-comparison-filters select{height:44px;font-size:16px}}
 
 @media(min-width:851px){.help-guide-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+/* household context switcher */
+.house-dropdown{width:290px}
+.house-dropdown-label{padding:7px 9px 5px;color:#999;font-size:8px;font-weight:800;letter-spacing:.8px;text-transform:uppercase}
+.house-dropdown button small{margin-top:2px}
+.house-dropdown .house-create-button{margin-top:6px;padding-top:10px;border-top:1px solid var(--line);border-radius:0 0 10px 10px}
+.house-dropdown .house-create-button>span{background:#17171d;color:#fff}
+.house-dropdown .house-create-button strong{color:#35343d}
+.personal-household .settings-tabs button:nth-child(2){display:none}
+.read-only-household .heading-actions,.read-only-household .page-heading>.primary-button,.read-only-household .expense-detail-buttons,.read-only-household .recurring-actions,.read-only-household .category-settings-view button{display:none}

@@ -148,7 +148,8 @@ function Auth({ onAuthenticated }: { onAuthenticated: (token: string) => void })
     e.preventDefault(); setError(''); setLoading(true)
     try {
       if (mode === 'register') {
-        await api.register({ name:form.name.trim(),username:form.username.trim(),email:email.trim(),...(invitationFlow?{invitationCode}:{householdName:form.householdName.trim()}) })
+        const householdName=form.householdName.trim()
+        await api.register({ name:form.name.trim(),username:form.username.trim(),email:email.trim(),...(invitationFlow?{invitationCode}:householdName?{householdName}:{}) })
         if(invitationFlow){setRegisteredWithInvitation(true);clearInvitationFromUrl()}
         await api.sendOtp(email)
         setMode('login'); setStep('code')
@@ -192,7 +193,7 @@ function Auth({ onAuthenticated }: { onAuthenticated: (token: string) => void })
         <form onSubmit={submit}>
           {mode === 'register' && <>
             <label>Nome completo<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="João Santos" /></label>
-            <div className="input-pair"><label>Username<input required value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="joao.santos" /></label>{!invitationFlow&&<label>Nome do agregado<input required value={form.householdName} onChange={e => setForm({ ...form, householdName: e.target.value })} placeholder="Família Santos" /></label>}</div>
+            <div className="input-pair"><label>Username<input required value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="joao.santos" /></label>{!invitationFlow&&<label>Agregado partilhado <small>Opcional</small><input value={form.householdName} onChange={e => setForm({ ...form, householdName: e.target.value })} placeholder="Ex.: Família Santos" /></label>}</div>
           </>}
           {invitationFlow&&step==='email'&&<label>Código do convite<input required autoCapitalize="characters" value={invitationCode} onChange={e=>setInvitationCode(e.target.value.trim().toUpperCase())} placeholder="FINGS-XXXX-XXXX"/></label>}
           {step === 'email' ? <label>Email<input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="nome@email.pt" /></label> : <label>Código de acesso<input className="otp-input" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} placeholder="• • • • • •" /></label>}
@@ -222,7 +223,7 @@ function Sidebar({ view, setView, mobileOpen, close, onLogout }: { view: View; s
   </aside>{mobileOpen && <button aria-label="Fechar menu" className="scrim" onClick={close} />}</>
 }
 
-function Topbar({ user, household, households, setHousehold, onMenu, onLogout, token, onNotificationNavigate, onNotificationSettings }: { user: User; household?: Household; households: Household[]; setHousehold: (h: Household) => void; onMenu: () => void; onLogout?: () => void; token:string; onNotificationNavigate:(actionUrl?:string|null,householdId?:string|null)=>void; onNotificationSettings:()=>void }) {
+function Topbar({ user, household, households, setHousehold, onCreateHousehold, onMenu, onLogout, token, onNotificationNavigate, onNotificationSettings }: { user: User; household?: Household; households: Household[]; setHousehold: (h: Household) => void; onCreateHousehold:()=>void; onMenu: () => void; onLogout?: () => void; token:string; onNotificationNavigate:(actionUrl?:string|null,householdId?:string|null)=>void; onNotificationSettings:()=>void }) {
   const [householdOpen, setHouseholdOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
@@ -240,7 +241,7 @@ function Topbar({ user, household, households, setHousehold, onMenu, onLogout, t
     <button className="menu-button" onClick={onMenu}><Menu /></button>
     <div className="household-wrap">
       <button className="household-button" onClick={() => setHouseholdOpen(!householdOpen)}><span className="house-avatar">{household?initials(household.name):'—'}</span><span><small>AGREGADO</small><strong>{household?.name || 'Não selecionado'}</strong></span><ChevronDown size={16} /></button>
-      {householdOpen && <div className="house-dropdown">{households.map(h => <button key={h.id} onClick={() => { setHousehold(h); setHouseholdOpen(false) }}><span>{h.name.slice(0, 2).toUpperCase()}</span><div><strong>{h.name}</strong><small>{h.currency} · {h.role === 1 ? 'Owner' : 'Membro'}</small></div>{h.id === household?.id && <Check size={16} />}</button>)}</div>}
+      {householdOpen && <div className="house-dropdown"><div className="house-dropdown-label">Os teus agregados</div>{households.map(h => <button key={h.id} onClick={() => { setHousehold(h); setHouseholdOpen(false) }}><span>{h.type==='Personal'?<UserRound size={15}/>:h.name.slice(0, 2).toUpperCase()}</span><div><strong>{h.name}</strong><small>{h.type==='Personal'?'Pessoal':`Partilhado · ${roleLabel(householdRoleName(h))}`}</small></div>{h.id === household?.id && <Check size={16} />}</button>)}<button className="house-create-button" onClick={()=>{onCreateHousehold();setHouseholdOpen(false)}}><span><Plus size={16}/></span><div><strong>Novo agregado</strong><small>Criar um contexto partilhado</small></div></button></div>}
     </div>
     <div className="top-actions">
       <button className="icon-button"><Search size={19} /></button>
@@ -251,7 +252,7 @@ function Topbar({ user, household, households, setHousehold, onMenu, onLogout, t
         {profileOpen && <div className="profile-dropdown" role="menu">
           <div className="profile-dropdown-head"><strong>{user.name}</strong><small>{user.email}</small></div>
           <div className="profile-dropdown-label">Alterar conta</div>
-          {households.map(item => <button key={item.id} role="menuitemradio" aria-checked={item.id === household?.id} onClick={() => { setHousehold(item); setProfileOpen(false) }}><span className="profile-option-avatar">{item.name.slice(0, 2).toUpperCase()}</span><span><strong>{item.name}</strong><small>{item.role === 1 ? 'Owner' : 'Membro'}</small></span>{item.id === household?.id && <Check size={16} />}</button>)}
+          {households.map(item => <button key={item.id} role="menuitemradio" aria-checked={item.id === household?.id} onClick={() => { setHousehold(item); setProfileOpen(false) }}><span className="profile-option-avatar">{item.type==='Personal'?<UserRound size={14}/>:item.name.slice(0, 2).toUpperCase()}</span><span><strong>{item.name}</strong><small>{item.type==='Personal'?'Pessoal':`Partilhado · ${roleLabel(householdRoleName(item))}`}</small></span>{item.id === household?.id && <Check size={16} />}</button>)}
           <button className="profile-logout" role="menuitem" onClick={() => onLogout ? onLogout() : window.dispatchEvent(new Event('fings:unauthorized'))}><span className="profile-logout-icon"><LogOut size={15}/></span><span className="profile-logout-copy"><strong>Terminar sessão</strong><small>Sair desta conta em segurança</small></span></button>
         </div>}
       </div>
@@ -722,11 +723,12 @@ function memberErrorMessage(error: unknown, operation: 'add'|'remove'|'load') {
   return error.message
 }
 
+function householdRoleName(household?:Household){return typeof household?.role==='string'?household.role:({1:'Owner',2:'Administrator',3:'Member',4:'Viewer'} as Record<number,string>)[household?.role||0]}
 function roleLabel(name?:string){return ({Owner:'Proprietário',Administrator:'Administrador',Member:'Membro',Viewer:'Leitor'} as Record<string,string>)[name||'']||name||'Papel desconhecido'}
 
 function LegacyHouseholdMembersSettings({ user, household, token }: { user:User; household:Household; token:string }) {
   const [members,setMembers]=useState<HouseholdMember[]>([]);const [roles,setRoles]=useState<HouseholdRole[]>([]);const [loading,setLoading]=useState(true);const [adding,setAdding]=useState(false);const [saving,setSaving]=useState(false);const [removingId,setRemovingId]=useState('');const [email,setEmail]=useState('');const [role,setRole]=useState('');const [error,setError]=useState('');const [success,setSuccess]=useState('')
-  const currentRoleName=roles.find(item=>item.value===household.role)?.name
+  const currentRoleName=householdRoleName(household)||roles.find(item=>item.value===household.role)?.name
   const canManage=currentRoleName==='Owner'||currentRoleName==='Administrator'
   const availableRoles=useMemo(()=>currentRoleName==='Administrator'?roles.filter(item=>item.name==='Member'||item.name==='Viewer'):roles,[currentRoleName,roles])
 
@@ -776,6 +778,11 @@ function HouseholdMemberEditor({member,relationships,roles,onCancel,onSave,savin
 }
 
 function HouseholdMembersSettings({ user, household, token }: { user:User; household:Household; token:string }) {
+  if(household.type==='Personal')return <div className="members-settings-view"><div className="form-error members-feedback">O contexto pessoal é privado e não permite membros ou convites.</div></div>
+  return <SharedHouseholdMembersSettings user={user} household={household} token={token}/>
+}
+
+function SharedHouseholdMembersSettings({ user, household, token }: { user:User; household:Household; token:string }) {
   const [members,setMembers]=useState<HouseholdMember[]>([])
   const [roles,setRoles]=useState<HouseholdRole[]>([])
   const [relationships,setRelationships]=useState<HouseholdRelationship[]>([])
@@ -794,8 +801,8 @@ function HouseholdMembersSettings({ user, household, token }: { user:User; house
   const [copied,setCopied]=useState<'code'|'link'>()
   const [error,setError]=useState('')
   const [success,setSuccess]=useState('')
-  const canManage=household.role===1||household.role===2
-  const currentRoleName=roles.find(item=>item.value===household.role)?.name
+  const currentRoleName=householdRoleName(household)||roles.find(item=>item.value===household.role)?.name
+  const canManage=currentRoleName==='Owner'||currentRoleName==='Administrator'
   const availableRoles=useMemo(()=>currentRoleName==='Administrator'?roles.filter(item=>item.name==='Member'||item.name==='Viewer'):roles,[currentRoleName,roles])
 
   useEffect(()=>{let active=true;setLoading(true);setError('');Promise.all([api.householdRoles(token),api.householdRelationships(token),api.householdMembers(household.id,token),canManage?api.householdInvitations(household.id,token):Promise.resolve([])]).then(([nextRoles,nextRelationships,nextMembers,nextInvitations])=>{if(!active)return;setRoles(nextRoles);setRelationships(nextRelationships);setMembers(nextMembers);setInvitations(nextInvitations)}).catch(reason=>{if(active)setError(memberErrorMessage(reason,'load'))}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[canManage,household.id,token])
@@ -885,6 +892,13 @@ function PeriodSelect({ label, value, onChange, max }: { label: string; value: s
   return <fieldset className="period-select"><legend>{label}</legend><div><select aria-label={`${label}: ano`} value={year} onChange={event => {const nextYear=event.target.value;const nextMonth=maxYear&&nextYear===maxYear&&month>maxMonth?maxMonth:month;onChange(`${nextYear}-${nextMonth}`)}}>{years.map(option => <option key={option} value={option}>{option}</option>)}</select><select aria-label={`${label}: mês`} value={month} onChange={event => onChange(`${year}-${event.target.value}`)}>{months.map(option => <option key={option} value={option}>{option}</option>)}</select></div></fieldset>
 }
 
+function CreateHouseholdModal({token,onClose,onCreated}:{token:string;onClose:()=>void;onCreated:(household:Household)=>void}){
+  const [form,setForm]=useState({name:'',currency:'EUR',timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone||'Europe/Lisbon'})
+  const [saving,setSaving]=useState(false);const [error,setError]=useState('')
+  async function submit(event:FormEvent){event.preventDefault();setSaving(true);setError('');try{const created=await api.createHousehold({name:form.name.trim(),currency:form.currency,timeZone:form.timeZone},token);onCreated(created);onClose()}catch(reason){setError(reason instanceof ApiError?reason.message:'Não foi possível criar o agregado partilhado.')}finally{setSaving(false)}}
+  return <ModalShell title="Novo agregado partilhado" subtitle="Cria um espaço financeiro para partilhar com outras pessoas." onClose={onClose} closeDisabled={saving}><form className="modal-form" onSubmit={submit}><label>Nome do agregado<input required autoFocus maxLength={200} value={form.name} onChange={event=>setForm({...form,name:event.target.value})} placeholder="Ex.: Família Santos"/></label><div className="input-pair"><label>Moeda<select value={form.currency} onChange={event=>setForm({...form,currency:event.target.value})}><option value="EUR">EUR — Euro</option><option value="USD">USD — Dólar</option><option value="GBP">GBP — Libra</option></select></label><label>Fuso horário<input required maxLength={100} value={form.timeZone} onChange={event=>setForm({...form,timeZone:event.target.value})}/></label></div><div className="info-box"><UsersRound/><span>Ficas como proprietário. Depois de criar, podes convidar membros em Definições › Família.</span></div>{error&&<div className="form-error" role="alert">{error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose} disabled={saving}>Cancelar</button><button className="primary-button" disabled={saving||!form.name.trim()}>{saving?<LoaderCircle className="spin"/>:<Plus/>}{saving?'A criar…':'Criar agregado'}</button></div></form></ModalShell>
+}
+
 function BudgetModal({ householdId, token, onClose, onCreated }: {householdId:string;token:string;onClose:()=>void;onCreated:(b:Budget)=>void}) {const [form,setForm]=useState({name:'',startMonth:initialMonth,endMonth:initialMonth,monthlyAmount:''});const [saving,setSaving]=useState(false);const [error,setError]=useState('');async function save(e:FormEvent){e.preventDefault();setError('');if(form.startMonth>form.endMonth){setError('O mês final deve ser igual ou posterior ao mês inicial.');return}setSaving(true);try{const payload={name:form.name,startMonth:`${form.startMonth}-01`,endMonth:`${form.endMonth}-01`,monthlyAmount:Number(form.monthlyAmount),allocations:[]};const created=await api.createBudget(householdId,payload,token);onCreated(created);onClose()}catch(err){setError(err instanceof ApiError?err.message:'Não foi possível criar o orçamento.')}finally{setSaving(false)}}return <ModalShell onClose={onClose} title="Novo orçamento" subtitle="Planeia um valor mensal para um período."><form className="modal-form" onSubmit={save}><label>Nome do orçamento<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ex.: Primeiro semestre"/></label><div className="input-pair"><PeriodSelect label="Mês inicial" value={form.startMonth} onChange={startMonth=>setForm({...form,startMonth})}/><PeriodSelect label="Mês final" value={form.endMonth} onChange={endMonth=>setForm({...form,endMonth})}/></div><label className="amount-label">Valor mensal<div className="amount-input small"><span>€</span><input required inputMode="decimal" value={form.monthlyAmount} onChange={e=>setForm({...form,monthlyAmount:e.target.value})} placeholder="0,00"/></div></label><div className="info-box"><Sparkles/><span>A Fings irá criar uma receita planeada para cada mês deste período.</span></div>{error&&<div className="form-error">{error}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={saving}>{saving?<LoaderCircle className="spin"/>:<Check/>} Criar orçamento</button></div></form></ModalShell>}
 
 function App() {
@@ -906,17 +920,36 @@ function App() {
   const [movementSubcategoryId,setMovementSubcategoryId]=useState<string>()
   const [creatingRecurring,setCreatingRecurring]=useState(false)
   const [editingRecurring,setEditingRecurring]=useState<RecurringExpense|null>(null)
+  const [creatingHousehold,setCreatingHousehold]=useState(false)
   const [settingsInitialTab,setSettingsInitialTab]=useState<'profile'|'notifications'>('profile')
   const [notificationExpenseId,setNotificationExpenseId]=useState(()=>new URLSearchParams(window.location.search).get('expenseId')||undefined)
   const authenticated=!!token
   const householdId=household?.id||''
+  const householdReadOnly=householdRoleName(household)==='Viewer'
   const periodLabel=new Intl.DateTimeFormat('pt-PT',{month:'long',year:'numeric'}).format(new Date(period.year,period.month-1,1))
   const movementPeriodLabel=new Intl.DateTimeFormat('pt-PT',{month:'long',year:'numeric'}).format(new Date(movementPeriod.year,movementPeriod.month-1,1))
 
+  function selectHousehold(next:Household){
+    if(next.id===household?.id)return
+    localStorage.setItem('fings_active_household_id',next.id)
+    setModal(null);setEditingExpense(null);setCreatingRecurring(false);setEditingRecurring(null)
+    setMovementCategoryId(undefined);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null)
+    setCategories([]);setExpenses([]);setMovementExpenses([]);setDashboard(undefined);setBudgets([]);setRecurring([])
+    setHousehold(next)
+  }
+
+  async function recoverHousehold(){
+    const available=await api.households(token)
+    setHouseholds(available)
+    const current=available.find(item=>item.id===household?.id)
+    const next=current||available.find(item=>item.type==='Personal')||available[0]
+    if(next){localStorage.setItem('fings_active_household_id',next.id);setHousehold(next)}else{localStorage.removeItem('fings_active_household_id');setHousehold(undefined)}
+  }
+
   useEffect(()=>{const clearSession=()=>{localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined)};window.addEventListener('fings:unauthorized',clearSession);return()=>window.removeEventListener('fings:unauthorized',clearSession)},[])
-  useEffect(()=>{if(!token)return;setLoading(true);setLoadError('');(async()=>{try{const [me,initialHouseholds]=await Promise.all([api.me(token),api.households(token)]);setUser(me);setHouseholds(initialHouseholds);setHousehold(initialHouseholds[0]);const pendingInvitation=invitationCodeFromUrl();if(pendingInvitation){try{await api.acceptHouseholdInvitation(pendingInvitation,token);const nextHouseholds=await api.households(token);setHouseholds(nextHouseholds);setHousehold(nextHouseholds.find(item=>!initialHouseholds.some(existing=>existing.id===item.id))||nextHouseholds[0]);clearInvitationFromUrl()}catch(error){setLoadError(error instanceof ApiError?error.message:'Não foi possível aceitar o convite.')}}}catch(e){setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar a conta.')}finally{setLoading(false)}})()},[token])
-  useEffect(()=>{if(!token||!household)return;setLoading(true);setLoadError('');setDashboard(undefined);const month=String(period.month).padStart(2,'0');const from=`${period.year}-${month}-01`;const to=`${period.year}-${month}-${String(new Date(period.year,period.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.categories(household.id,token),api.expenses(household.id,from,to,token),api.dashboard(household.id,period.year,period.month,token),api.budgets(household.id,token),api.recurringExpenses(household.id,token)]).then(([c,e,d,b,r])=>{setCategories(c);setExpenses(e);setDashboard(d);setBudgets(b);setRecurring(r)}).catch(e=>{setExpenses([]);setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar os dados.')}).finally(()=>setLoading(false))},[household,token,period,dataRevision])
-  useEffect(()=>{if(!token||!household||view!=='expenses')return;setMovementLoading(true);const month=String(movementPeriod.month).padStart(2,'0');const from=`${movementPeriod.year}-${month}-01`;const to=`${movementPeriod.year}-${month}-${String(new Date(movementPeriod.year,movementPeriod.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.expenses(household.id,from,to,token),movementSubcategoryId?api.expensesBySubcategory(household.id,movementSubcategoryId,from,to,token):Promise.resolve(null)]).then(([all,subcategory])=>{setMovementExpenses(all);setMovementSubcategoryExpenses(subcategory)}).catch(e=>{setMovementExpenses([]);setMovementSubcategoryExpenses(movementSubcategoryId?[]:null);setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar os movimentos.')}).finally(()=>setMovementLoading(false))},[household,token,view,movementPeriod,movementSubcategoryId,dataRevision])
+  useEffect(()=>{if(!token)return;setLoading(true);setLoadError('');(async()=>{try{const [me,initialHouseholds]=await Promise.all([api.me(token),api.households(token)]);setUser(me);setHouseholds(initialHouseholds);const storedId=localStorage.getItem('fings_active_household_id');const initial=initialHouseholds.find(item=>item.id===storedId)||initialHouseholds.find(item=>item.type==='Personal')||initialHouseholds[0];if(initial){localStorage.setItem('fings_active_household_id',initial.id);setHousehold(initial)}const pendingInvitation=invitationCodeFromUrl();if(pendingInvitation){try{await api.acceptHouseholdInvitation(pendingInvitation,token);const nextHouseholds=await api.households(token);const joined=nextHouseholds.find(item=>!initialHouseholds.some(existing=>existing.id===item.id))||initial;setHouseholds(nextHouseholds);if(joined){localStorage.setItem('fings_active_household_id',joined.id);setHousehold(joined)}clearInvitationFromUrl()}catch(error){setLoadError(error instanceof ApiError?error.message:'Não foi possível aceitar o convite.')}}}catch(e){setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar a conta.')}finally{setLoading(false)}})()},[token])
+  useEffect(()=>{if(!token||!household)return;const controller=new AbortController();setLoading(true);setLoadError('');setCategories([]);setExpenses([]);setDashboard(undefined);setBudgets([]);setRecurring([]);const month=String(period.month).padStart(2,'0');const from=`${period.year}-${month}-01`;const to=`${period.year}-${month}-${String(new Date(period.year,period.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.categories(household.id,token,controller.signal),api.expenses(household.id,from,to,token,controller.signal),api.dashboard(household.id,period.year,period.month,token,controller.signal),api.budgets(household.id,token,controller.signal),api.recurringExpenses(household.id,token,controller.signal)]).then(([c,e,d,b,r])=>{if(controller.signal.aborted)return;setCategories(c);setExpenses(e);setDashboard(d);setBudgets(b);setRecurring(r)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os dados.')}).finally(()=>{if(!controller.signal.aborted)setLoading(false)});return()=>controller.abort()},[household?.id,token,period,dataRevision])
+  useEffect(()=>{if(!token||!household||view!=='expenses')return;const controller=new AbortController();setMovementLoading(true);setMovementExpenses([]);setMovementSubcategoryExpenses(movementSubcategoryId?[]:null);const month=String(movementPeriod.month).padStart(2,'0');const from=`${movementPeriod.year}-${month}-01`;const to=`${movementPeriod.year}-${month}-${String(new Date(movementPeriod.year,movementPeriod.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.expenses(household.id,from,to,token,controller.signal),movementSubcategoryId?api.expensesBySubcategory(household.id,movementSubcategoryId,from,to,token,controller.signal):Promise.resolve(null)]).then(([all,subcategory])=>{if(controller.signal.aborted)return;setMovementExpenses(all);setMovementSubcategoryExpenses(subcategory)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os movimentos.')}).finally(()=>{if(!controller.signal.aborted)setMovementLoading(false)});return()=>controller.abort()},[household?.id,token,view,movementPeriod,movementSubcategoryId,dataRevision])
   const title=useMemo(()=>({overview:'Visão geral',expenses:'Movimentos',budgets:'Orçamentos',recurring:'Recorrentes',help:'Ajuda',settings:'Definições'})[view],[view]);useEffect(()=>{document.title=`${title} — Fings`},[title])
   function login(t:string){localStorage.setItem('fings_token',t);sessionStorage.removeItem('fings_token');setToken(t)}
   async function logout(){try{await removeCurrentPushSubscription(token)}finally{localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setView('overview')}}
@@ -925,9 +958,10 @@ function App() {
   function changeMovementCategory(categoryId?:string){setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementCategoryId(categoryId)}
   function changeMovementSubcategory(subcategoryId?:string){setMovementCategoryId(undefined);setMovementSubcategoryId(subcategoryId);if(!subcategoryId)setMovementSubcategoryExpenses(null)}
   function openCategoryMovements(categoryId:string,subcategoryId?:string){setMovementPeriod(period);setMovementSubcategoryId(subcategoryId);setMovementSubcategoryExpenses(null);setMovementCategoryId(categoryId);setView('expenses')}
+  function openFinancialModal(next:Modal){if(!householdReadOnly)setModal(next)}
   function openNotificationSettings(){setSettingsInitialTab('notifications');setView('settings')}
   function openNotificationAction(actionUrl?:string|null,notificationHouseholdId?:string|null){
-    if(notificationHouseholdId){const target=households.find(item=>item.id===notificationHouseholdId);if(target)setHousehold(target)}
+    if(notificationHouseholdId){const target=households.find(item=>item.id===notificationHouseholdId);if(target)selectHousehold(target)}
     if(!actionUrl)return
     try{
       const url=new URL(actionUrl,window.location.origin)
@@ -948,14 +982,14 @@ function App() {
   }
   if(!authenticated)return <Auth onAuthenticated={login}/>
   if(!user)return <div className="page-loader"><LoaderCircle className="spin"/><span>A carregar os dados da conta…</span></div>
-  return <div className="app-shell">
+  return <div className={`app-shell ${household?.type==='Personal'?'personal-household':'shared-household'} ${householdReadOnly?'read-only-household':''}`}>
     <Sidebar view={view} setView={setView} mobileOpen={mobileOpen} close={()=>setMobileOpen(false)} onLogout={logout}/>
     <div className="app-main">
-      <Topbar user={user} household={household} households={households} setHousehold={setHousehold} onMenu={()=>setMobileOpen(true)} onLogout={logout} token={token} onNotificationNavigate={openNotificationAction} onNotificationSettings={openNotificationSettings}/>
+      <Topbar user={user} household={household} households={households} setHousehold={selectHousehold} onCreateHousehold={()=>setCreatingHousehold(true)} onMenu={()=>setMobileOpen(true)} onLogout={logout} token={token} onNotificationNavigate={openNotificationAction} onNotificationSettings={openNotificationSettings}/>
       <main className="content">
         {loadError&&<div className="page-error">{loadError}</div>}
         {loading?<div className="page-loader"><LoaderCircle className="spin"/><span>A organizar as tuas finanças…</span></div>:<>
-          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={setModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview} onCategorySelect={openCategoryMovements} householdId={householdId} token={token} dataRevision={dataRevision}/>}
+          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={openFinancialModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview} onCategorySelect={openCategoryMovements} householdId={householdId} token={token} dataRevision={dataRevision}/>}
           {view==='expenses'&&<ExpensesPage
             expenses={movementSubcategoryExpenses??movementExpenses}
             allExpenses={movementExpenses}
@@ -963,7 +997,7 @@ function App() {
             periodLabel={movementPeriodLabel}
             loading={movementLoading}
             changePeriod={changeMovementPeriod}
-            openModal={setModal}
+            openModal={openFinancialModal}
             onEdit={setEditingExpense}
             onDelete={async expense=>{
               await api.deleteExpense(householdId,expense.id,token)
@@ -980,7 +1014,7 @@ function App() {
           />}
           {view==='budgets'&&<BudgetsPage dashboard={dashboard} budgets={budgets} openModal={setModal}/>} 
           {view==='recurring'&&<RecurringPage items={recurring} categories={categories} onCreate={()=>setCreatingRecurring(true)} onEdit={setEditingRecurring} onMaterialize={async item=>{const result=await api.materializeRecurringExpense(householdId,item.id,token);setRecurring(current=>current.map(existing=>existing.id===item.id?{...existing,nextOccurrenceDate:result.nextOccurrenceDate,isActive:result.isActive}:existing));setDataRevision(current=>current+1);return result}}/>}
-          {view==='help'&&<HelpPage navigate={setView} openModal={setModal} openNotificationSettings={openNotificationSettings}/>}
+          {view==='help'&&<HelpPage navigate={setView} openModal={openFinancialModal} openNotificationSettings={openNotificationSettings}/>}
           {view==='settings'&&household&&<SettingsPage key={`${household.id}-${settingsInitialTab}`} user={user} categories={categories} household={household} token={token} onUserUpdated={setUser} onCategoriesChanged={setCategories} initialTab={settingsInitialTab}/>}
         </>}
       </main>
@@ -991,6 +1025,7 @@ function App() {
     {editingExpense&&<ExpenseModal item={editingExpense} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingExpense(null)} onSaved={()=>setDataRevision(current=>current+1)}/>} 
     {modal==='receipt'&&<ReceiptModal householdId={householdId} token={token} categories={categories} onClose={()=>setModal(null)} onCreated={()=>setDataRevision(current=>current+1)}/>} 
     {modal==='budget'&&<BudgetModal householdId={householdId} token={token} onClose={()=>setModal(null)} onCreated={b=>setBudgets([b,...budgets])}/>} 
+    {creatingHousehold&&<CreateHouseholdModal token={token} onClose={()=>setCreatingHousehold(false)} onCreated={created=>{setHouseholds(current=>[...current,created]);selectHousehold(created)}}/>}
     {creatingRecurring&&<RecurringExpenseModal categories={categories} householdId={householdId} token={token} onClose={()=>setCreatingRecurring(false)} onSaved={created=>{setRecurring(current=>[created,...current]);void refreshOverview()}}/>}
     {editingRecurring&&<RecurringExpenseModal item={editingRecurring} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingRecurring(null)} onSaved={updated=>{setRecurring(current=>current.map(item=>item.id===updated.id?updated:item));void refreshOverview()}}/>}
   </div>

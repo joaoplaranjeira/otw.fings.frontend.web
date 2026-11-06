@@ -45,7 +45,9 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   return response.json() as Promise<T>
 }
 
-export type Household = { id: string; name: string; currency: string; timeZone: string; role: number }
+export type HouseholdRoleName = 'Owner' | 'Administrator' | 'Member' | 'Viewer'
+export type HouseholdType = 'Personal' | 'Shared'
+export type Household = { id: string; name: string; currency: string; timeZone: string; role: HouseholdRoleName | number; type: HouseholdType }
 export type User = { id: number; name: string; username: string; email: string }
 export type HouseholdRole = { value: number; name: string }
 export type HouseholdRelationship = { value: number; name: string }
@@ -135,6 +137,7 @@ export const api = {
   me: (token: string) => request<User>('/api/users/me', {}, token),
   updateProfile: (data: { name: string; username: string }, token: string) => request<User>('/api/users/me', { method: 'PATCH', body: JSON.stringify(data) }, token),
   households: (token: string) => request<Household[]>('/api/households', {}, token),
+  createHousehold: (data: { name: string; currency?: string; timeZone?: string }, token: string) => request<Household>('/api/households', { method: 'POST', body: JSON.stringify(data) }, token),
   householdRoles: (token: string) => request<HouseholdRole[]>('/api/household-roles', {}, token),
   householdRelationships: (token: string) => request<HouseholdRelationship[]>('/api/household-relationships', {}, token),
   householdMembers: (householdId: string, token: string) => request<HouseholdMember[]>(`/api/households/${householdId}/members`, {}, token),
@@ -148,13 +151,13 @@ export const api = {
   regenerateHouseholdInvitation: (householdId: string, invitationId: string, token: string) => request<HouseholdInvitation>(`/api/households/${householdId}/invitations/${invitationId}/regenerate-code`, { method: 'POST' }, token),
   householdInvitation: (code: string) => request<HouseholdInvitationPreview>(`/api/household-invitations/${encodeURIComponent(code)}`),
   acceptHouseholdInvitation: (code: string, token: string) => request<HouseholdMember>(`/api/household-invitations/${encodeURIComponent(code)}/accept`, { method: 'POST' }, token),
-  categories: (householdId: string, token: string) => request<Category[]>(`/api/households/${householdId}/categories`, {}, token),
-  expenses: (householdId: string, from: string, to: string, token: string) => request<Expense[]>(`/api/households/${householdId}/expenses?from=${from}&to=${to}`, {}, token),
-  expensesBySubcategory: (householdId: string, subcategoryId: string, from: string, to: string, token: string) => request<Expense[]>(`/api/households/${householdId}/expenses/subcategories/${encodeURIComponent(subcategoryId)}?from=${from}&to=${to}`, {}, token),
+  categories: (householdId: string, token: string, signal?: AbortSignal) => request<Category[]>(`/api/households/${householdId}/categories`, { signal }, token),
+  expenses: (householdId: string, from: string, to: string, token: string, signal?: AbortSignal) => request<Expense[]>(`/api/households/${householdId}/expenses?from=${from}&to=${to}`, { signal }, token),
+  expensesBySubcategory: (householdId: string, subcategoryId: string, from: string, to: string, token: string, signal?: AbortSignal) => request<Expense[]>(`/api/households/${householdId}/expenses/subcategories/${encodeURIComponent(subcategoryId)}?from=${from}&to=${to}`, { signal }, token),
   expenseSuggestions: (householdId: string, token: string) => request<ExpenseSuggestion[]>(`/api/households/${householdId}/expenses/suggestions`, {}, token),
-  dashboard: (householdId: string, year: number, month: number, token: string) => request<Dashboard>(`/api/households/${householdId}/dashboard/${year}/${month}`, {}, token),
-  budgets: (householdId: string, token: string) => request<Budget[]>(`/api/households/${householdId}/budgets`, {}, token),
-  recurringExpenses: (householdId: string, token: string) => request<RecurringExpense[]>(`/api/households/${householdId}/recurring-expenses`, {}, token),
+  dashboard: (householdId: string, year: number, month: number, token: string, signal?: AbortSignal) => request<Dashboard>(`/api/households/${householdId}/dashboard/${year}/${month}`, { signal }, token),
+  budgets: (householdId: string, token: string, signal?: AbortSignal) => request<Budget[]>(`/api/households/${householdId}/budgets`, { signal }, token),
+  recurringExpenses: (householdId: string, token: string, signal?: AbortSignal) => request<RecurringExpense[]>(`/api/households/${householdId}/recurring-expenses`, { signal }, token),
   createRecurringExpense: (householdId: string, data: CreateRecurringExpensePayload, token: string) => request<RecurringExpense>(`/api/households/${householdId}/recurring-expenses`, { method: 'POST', body: JSON.stringify(data) }, token),
   updateRecurringExpense: (householdId: string, recurringExpenseId: string, data: RecurringExpensePayload, token: string) => request<RecurringExpense>(`/api/households/${householdId}/recurring-expenses/${recurringExpenseId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
   materializeRecurringExpense: (householdId: string, recurringExpenseId: string, token: string) => request<RecurringExpenseMaterialization>(`/api/households/${householdId}/recurring-expenses/${recurringExpenseId}/materialize`, { method: 'POST' }, token),
