@@ -2,11 +2,11 @@ import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent } from '
 import {
   ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Bell, CalendarDays, Camera, Check, Copy,
   ChevronDown, ChevronRight, CircleHelp, CreditCard, FileText, Grid2X2, Home, Landmark, Link2, Mail,
-  LayoutDashboard, LoaderCircle, LogOut, Menu, MoreHorizontal, Plus, ReceiptText,
+  LayoutDashboard, Lightbulb, LoaderCircle, LogOut, Menu, MoreHorizontal, Plus, ReceiptText,
   Pencil, Percent, Play, RefreshCw, Repeat2, Search, Settings, ShieldCheck, ShoppingBasket, Sparkles, Tags, Trash2, TrendingDown, TrendingUp,
   TriangleAlert, Upload, UserPlus, UserRound, UsersRound, Utensils, WalletCards, X,
 } from 'lucide-react'
-import { api, ApiError, type Budget, type Category, type Dashboard, type Expense, type ExpensePayloadLine, type ExpenseSuggestion, type Household, type HouseholdInvitation, type HouseholdInvitationPreview, type HouseholdMember, type HouseholdRelationship, type HouseholdRole, type ReceiptImageQuality, type ReceiptParseLine, type ReceiptParseResult, type RecurringExpense, type RecurringExpenseMaterialization, type User } from './api'
+import { api, ApiError, type Budget, type Category, type Dashboard, type Expense, type ExpensePayloadLine, type ExpenseSuggestion, type FinancialInsight, type Household, type HouseholdInsightsResponse, type HouseholdInvitation, type HouseholdInvitationPreview, type HouseholdMember, type HouseholdRelationship, type HouseholdRole, type InsightExpenseFilter, type InsightMetric, type InsightSeverity, type InsightType, type ReceiptImageQuality, type ReceiptParseLine, type ReceiptParseResult, type RecurringExpense, type RecurringExpenseMaterialization, type User } from './api'
 import { NotificationCenter, NotificationSettings, removeCurrentPushSubscription } from './notifications'
 
 type View = 'overview' | 'expenses' | 'budgets' | 'recurring' | 'help' | 'settings'
@@ -359,7 +359,43 @@ function MonthlyExpenseComparison({householdId,token,categories,categoryMode=fal
   </article>
 }
 
-function Overview({ dashboard, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh, onCategorySelect, householdId, token, dataRevision }: { dashboard?: Dashboard; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void; onCategorySelect:(categoryId:string,subcategoryId?:string)=>void;householdId:string;token:string;dataRevision:number }) {
+const insightVisuals:Record<InsightType,{icon:typeof Sparkles;label:string}>={
+  BudgetPace:{icon:WalletCards,label:'Ritmo do orçamento'},SpendingTrend:{icon:TrendingUp,label:'Evolução da despesa'},
+  SpendingDriver:{icon:ArrowUpRight,label:'Causa da variação'},UnusualExpense:{icon:TriangleAlert,label:'Despesa anómala'},
+  SmallExpenses:{icon:ReceiptText,label:'Pequenas despesas'},MerchantConcentration:{icon:ShoppingBasket,label:'Concentração por comerciante'},
+  RecurringCommitments:{icon:Repeat2,label:'Compromissos recorrentes'},PotentialSubscriptions:{icon:RefreshCw,label:'Possíveis subscrições'},
+  BudgetAccuracy:{icon:Percent,label:'Qualidade do orçamento'},DataQuality:{icon:ShieldCheck,label:'Qualidade dos dados'},
+}
+
+const insightSeverityLabels:Record<InsightSeverity,string>={Information:'Informação',Positive:'Positivo',Warning:'Atenção',Critical:'Crítico'}
+
+function formatInsightMetric(metric:InsightMetric,currency:string){
+  if(metric.unit==='percent')return new Intl.NumberFormat('pt-PT',{style:'percent',maximumFractionDigits:1}).format(metric.value/100)
+  if(metric.unit==='count')return new Intl.NumberFormat('pt-PT',{maximumFractionDigits:0}).format(metric.value)
+  if(metric.unit==='days')return `${new Intl.NumberFormat('pt-PT',{maximumFractionDigits:1}).format(metric.value)} ${metric.value===1?'dia':'dias'}`
+  const metricCurrency=metric.unit||currency
+  try{return new Intl.NumberFormat('pt-PT',{style:'currency',currency:metricCurrency,maximumFractionDigits:2}).format(metric.value)}catch{return new Intl.NumberFormat('pt-PT',{maximumFractionDigits:2}).format(metric.value)}
+}
+
+function insightSampleLabel(insight:FinancialInsight){
+  const subject=insight.type==='BudgetAccuracy'?'meses':insight.type==='RecurringCommitments'?'regras':'elementos analisados'
+  return `${insight.sampleSize} ${subject}`
+}
+
+function InsightsSection({response,onOpenExpenses}:{response?:HouseholdInsightsResponse;onOpenExpenses:(filter:InsightExpenseFilter)=>void}){
+  const insights=response?.insights||[]
+  return <section className="insights-section" aria-labelledby="insights-title">
+    <header className="insights-heading"><div><span className="card-label">INSIGHTS FINGS</span><h2 id="insights-title">O que os teus dados mostram</h2><p>Conclusões calculadas a partir dos movimentos, orçamentos e recorrências deste agregado.</p></div>{response&&<span>{response.historyMonths} {response.historyMonths===1?'mês':'meses'} de histórico</span>}</header>
+    {insights.length?<div className="insights-grid">{insights.map(insight=>{const visual=insightVisuals[insight.type];const Icon=visual.icon;const confidenceNote=insight.confidence<.7?'Estimativa inicial':insight.confidence<.85?'Baseado em histórico limitado':'';return <article className={`insight-card severity-${insight.severity.toLowerCase()}`} key={`${insight.type}-${insight.id}`}>
+      <header><span className="insight-card-icon"><Icon/></span><div><small>{visual.label}</small><h3>{insight.title}</h3></div><span className="insight-severity"><i aria-hidden="true"/>{insightSeverityLabels[insight.severity]}</span></header>
+      <p>{insight.explanation}</p>
+      {insight.metrics.length>0&&<dl className="insight-metrics">{insight.metrics.map(metric=><div key={metric.key}><dt>{metric.label}</dt><dd>{formatInsightMetric(metric,response!.currency)}</dd></div>)}</dl>}
+      <footer><div><span>{insightSampleLabel(insight)}</span>{confidenceNote&&<span className="insight-confidence">{confidenceNote}</span>}</div>{insight.expenseFilter&&<button type="button" onClick={()=>onOpenExpenses(insight.expenseFilter!)}>Ver movimentos <ArrowRight size={14}/></button>}</footer>
+    </article>})}</div>:<div className="insights-empty"><span><Lightbulb/></span><div><h3>Ainda não existe histórico suficiente para gerar insights.</h3><p>Continua a registar despesas e volta a consultar esta área.</p></div></div>}
+  </section>
+}
+
+function Overview({ dashboard, insights, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh, onCategorySelect, onInsightExpenses, householdId, token, dataRevision }: { dashboard?: Dashboard; insights?:HouseholdInsightsResponse; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void; onCategorySelect:(categoryId:string,subcategoryId?:string)=>void;onInsightExpenses:(filter:InsightExpenseFilter)=>void;householdId:string;token:string;dataRevision:number }) {
   const [spendingBreakdown,setSpendingBreakdown]=useState<'categories'|'subcategories'>('categories')
   const pct = dashboard?.budget ? Math.min(100, dashboard.confirmedExpenses / dashboard.budget * 100) : null
   const savingRate=dashboard?.plannedIncome ? (dashboard.plannedIncome-dashboard.confirmedExpenses)/dashboard.plannedIncome*100 : null
@@ -417,7 +453,7 @@ function Overview({ dashboard, expenses, categories, user, periodLabel, changePe
       <MonthlyExpenseComparison key={`${householdId}-all`} householdId={householdId} token={token} categories={categories} revision={dataRevision}/>
       <MonthlyExpenseComparison key={`${householdId}-category`} householdId={householdId} token={token} categories={categories} categoryMode revision={dataRevision}/>
     </section>
-    <section className="insight-banner"><span className="insight-icon"><Sparkles /></span><div><span className="card-label">INSIGHT FINGS</span><h3>Dados insuficientes para gerar uma análise.</h3><p>São necessários dados históricos de vários períodos para calcular tendências e projeções fiáveis.</p></div></section>
+    <InsightsSection response={insights} onOpenExpenses={onInsightExpenses}/>
   </>
 }
 
@@ -435,7 +471,23 @@ function ExpenseLinesPanel({expense,categories,onEdit,onDelete,deleting}:{expens
   return <section className="expense-detail"><header className="expense-detail-hero"><div className="expense-detail-identity"><span><ReceiptText size={20}/></span><div><small>DETALHE DO MOVIMENTO</small><h3>{expense.merchantName||expense.description}</h3><p>{formatDate(expense.date)} · {origin}</p></div></div><div className="expense-detail-actions"><div className="expense-detail-buttons"><button type="button" onClick={()=>onEdit(expense)} disabled={deleting}><Pencil size={14}/> Editar despesa</button><button type="button" className="danger" onClick={()=>onDelete(expense)} disabled={deleting}>{deleting?<LoaderCircle className="spin" size={14}/>:<Trash2 size={14}/>} {deleting?'A eliminar…':'Eliminar'}</button></div><div className="expense-detail-total"><small>VALOR TOTAL</small><strong>{euro.format(expense.amount)}</strong><span><Check size={12}/> {expense.lines.length} parcela{expense.lines.length===1?'':'s'} conciliada{expense.lines.length===1?'':'s'}</span></div></div></header><div className="expense-detail-body"><section className="expense-distribution"><div className="expense-detail-section-title"><div><span>Distribuição</span><strong>Onde foi aplicado o valor</strong></div><small>{distribution.length} categoria{distribution.length===1?'':'s'}</small></div><div className="expense-distribution-bar" aria-label="Distribuição do valor por categoria">{distribution.map(item=><i key={item.id} title={`${item.name}: ${euro.format(item.amount)}`} style={{width:`${Math.max(0,item.amount)/expense.amount*100}%`,background:item.color}}/>)}</div><div className="expense-distribution-legend">{distribution.map(item=><div key={item.id}><i style={{background:item.color}}/><span>{item.name}</span><strong>{euro.format(item.amount)}</strong><small>{Math.round(item.amount/expense.amount*100)}%</small></div>)}</div></section><section className="expense-installments"><div className="expense-detail-section-title"><div><span>Parcelas</span><strong>Composição da despesa</strong></div><small>{expense.lines.length} item{expense.lines.length===1?'':'s'}</small></div><div className="expense-installment-list">{expense.lines.map((line,index)=>{const color=categories.find(category=>category.id===line.categoryId)?.color||'#6d5dfc';const discount=line.amount<0;return <article className={`expense-installment ${discount?'discount':''}`} key={line.id}><span className="expense-installment-index">{discount?<Percent size={14}/>:String(index+1).padStart(2,'0')}</span><div className="expense-installment-main"><strong>{line.description}</strong><span><i style={{background:color}}/>{line.categoryName}{line.subcategoryName&&<em>{line.subcategoryName}</em>}</span></div><div className="expense-installment-math">{discount?<small>DESCONTO</small>:<>{line.quantity!=null&&<small>QTD. {line.quantity}</small>}{line.unitPrice!=null&&<span>{line.quantity!=null?'× ':''}{euro.format(line.unitPrice)}</span>}{line.quantity==null&&line.unitPrice==null&&<small>VALOR DIRETO</small>}</>}</div><strong className="expense-installment-amount">{euro.format(line.amount)}</strong></article>})}</div></section></div></section>
 }
 
-function ExpensesPage({ expenses, allExpenses, categories, periodLabel, loading, changePeriod, openModal, onEdit, onDelete, selectedCategoryId, onCategoryChange, selectedSubcategoryId, onSubcategoryChange, focusExpenseId }: { expenses: Expense[]; allExpenses:Expense[]; categories: Category[]; periodLabel:string; loading:boolean; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; onEdit:(expense:Expense)=>void; onDelete:(expense:Expense)=>Promise<void>; selectedCategoryId?:string; onCategoryChange:(categoryId?:string)=>void; selectedSubcategoryId?:string; onSubcategoryChange:(subcategoryId?:string)=>void; focusExpenseId?:string }) {
+function expenseOriginName(expense:Expense):InsightExpenseFilter['origin']{
+  if(expense.origin===1||expense.origin==='Manual')return 'Manual'
+  if(expense.origin===2||expense.origin==='Recurring')return 'Recurring'
+  return 'Receipt'
+}
+
+function expenseMatchesInsightFilter(expense:Expense,filter:InsightExpenseFilter){
+  if(expense.date.slice(0,10)<filter.from||expense.date.slice(0,10)>filter.to)return false
+  if(filter.maximumAmount!=null&&!(expense.amount<filter.maximumAmount))return false
+  if(filter.origin&&expenseOriginName(expense)!==filter.origin)return false
+  if(filter.merchantName&&(expense.merchantName||'').localeCompare(filter.merchantName,undefined,{sensitivity:'base'})!==0)return false
+  if(filter.categoryId&&expense.categoryId!==filter.categoryId&&!expense.lines?.some(line=>line.categoryId===filter.categoryId))return false
+  if(filter.subcategoryId&&expense.subcategoryId!==filter.subcategoryId&&!expense.lines?.some(line=>line.subcategoryId===filter.subcategoryId))return false
+  return true
+}
+
+function ExpensesPage({ expenses, allExpenses, categories, periodLabel, loading, changePeriod, openModal, onEdit, onDelete, selectedCategoryId, onCategoryChange, selectedSubcategoryId, onSubcategoryChange, insightFilter, onClearInsightFilter, focusExpenseId }: { expenses: Expense[]; allExpenses:Expense[]; categories: Category[]; periodLabel:string; loading:boolean; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; onEdit:(expense:Expense)=>void; onDelete:(expense:Expense)=>Promise<void>; selectedCategoryId?:string; onCategoryChange:(categoryId?:string)=>void; selectedSubcategoryId?:string; onSubcategoryChange:(subcategoryId?:string)=>void; insightFilter?:InsightExpenseFilter;onClearInsightFilter:()=>void;focusExpenseId?:string }) {
   const [search, setSearch] = useState('')
   const [expandedExpenseId,setExpandedExpenseId]=useState<string|undefined>(focusExpenseId)
   const [deletingExpenseId,setDeletingExpenseId]=useState<string>()
@@ -443,8 +495,8 @@ function ExpensesPage({ expenses, allExpenses, categories, periodLabel, loading,
   const [deleteError,setDeleteError]=useState('')
   const monthCategories=useMemo(()=>categories.filter(category=>allExpenses.some(expense=>expense.categoryId===category.id||expense.lines?.some(line=>line.categoryId===category.id))).map(category=>({...category,count:allExpenses.filter(expense=>expense.categoryId===category.id||expense.lines?.some(line=>line.categoryId===category.id)).length})),[categories,allExpenses])
   const availableSubcategories=useMemo(()=>categories.filter(category=>category.isActive).flatMap(category=>category.subcategories.filter(subcategory=>subcategory.isActive).map(subcategory=>({...subcategory,categoryId:category.id,categoryName:category.name,color:category.color,count:allExpenses.filter(expense=>expense.subcategoryId===subcategory.id||expense.lines?.some(line=>line.subcategoryId===subcategory.id)).length}))),[categories,allExpenses])
-  const shown = expenses.filter(e => (!selectedCategoryId||e.categoryId===selectedCategoryId||e.lines?.some(line=>line.categoryId===selectedCategoryId))&&`${e.description} ${e.merchantName} ${e.categoryName} ${e.lines?.map(line=>`${line.description} ${line.categoryName} ${line.subcategoryName||''}`).join(' ')||''}`.toLowerCase().includes(search.toLowerCase()))
-  const filtersActive=!!selectedCategoryId||!!selectedSubcategoryId||!!search.trim()
+  const shown = expenses.filter(e => (!insightFilter||expenseMatchesInsightFilter(e,insightFilter))&&(!selectedCategoryId||e.categoryId===selectedCategoryId||e.lines?.some(line=>line.categoryId===selectedCategoryId))&&`${e.description} ${e.merchantName} ${e.categoryName} ${e.lines?.map(line=>`${line.description} ${line.categoryName} ${line.subcategoryName||''}`).join(' ')||''}`.toLowerCase().includes(search.toLowerCase()))
+  const filtersActive=!!insightFilter||!!selectedCategoryId||!!selectedSubcategoryId||!!search.trim()
   const monthTotal=allExpenses.reduce((sum,expense)=>sum+(Number.isFinite(expense.amount)?expense.amount:0),0)
   useEffect(()=>{if(focusExpenseId)setExpandedExpenseId(focusExpenseId)},[focusExpenseId])
   async function removeExpense(expense:Expense){
@@ -459,6 +511,7 @@ function ExpensesPage({ expenses, allExpenses, categories, periodLabel, loading,
       <div className="heading-actions movement-heading-actions"><button className="secondary-button" onClick={() => openModal('import')}><Copy size={16}/> Importar anteriores</button><button className="secondary-button" onClick={() => openModal('receipt')}><Camera size={17} /> Digitalizar talão</button><button className="primary-button" onClick={() => openModal('expense')}><Plus size={17} /> Nova despesa</button></div>
     </div>
     <div className="panel data-panel">
+      {insightFilter&&<div className="insight-filter-banner"><span><Sparkles size={16}/></span><div><strong>Movimentos relacionados com o insight</strong><small>{formatDate(insightFilter.from)} a {formatDate(insightFilter.to)}{insightFilter.merchantName?` · ${insightFilter.merchantName}`:''}</small></div><button type="button" onClick={onClearInsightFilter}><X size={14}/> Limpar filtro</button></div>}
       <div className="table-toolbar">
         <div className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar movimentos" /></div>
         <div className="movement-toolbar-summary"><div className="movement-month-total"><span>Total do mês</span><strong>{loading?'—':euro.format(monthTotal)}</strong></div><MonthNavigator label={periodLabel} onChange={changePeriod}/></div>
@@ -913,11 +966,12 @@ function App() {
   const [user,setUser]=useState<User>()
   const [period,setPeriod]=useState(initialPeriod)
   const [movementPeriod,setMovementPeriod]=useState(initialPeriod)
-  const [households,setHouseholds]=useState<Household[]>([]);const [household,setHousehold]=useState<Household>();const [categories,setCategories]=useState<Category[]>([]);const [expenses,setExpenses]=useState<Expense[]>([]);const [dashboard,setDashboard]=useState<Dashboard>();const [budgets,setBudgets]=useState<Budget[]>([]);const [recurring,setRecurring]=useState<RecurringExpense[]>([]);const [loading,setLoading]=useState(false);const [loadError,setLoadError]=useState('')
+  const [households,setHouseholds]=useState<Household[]>([]);const [household,setHousehold]=useState<Household>();const [categories,setCategories]=useState<Category[]>([]);const [expenses,setExpenses]=useState<Expense[]>([]);const [dashboard,setDashboard]=useState<Dashboard>();const [insights,setInsights]=useState<HouseholdInsightsResponse>();const [budgets,setBudgets]=useState<Budget[]>([]);const [recurring,setRecurring]=useState<RecurringExpense[]>([]);const [loading,setLoading]=useState(false);const [loadError,setLoadError]=useState('')
   const [movementExpenses,setMovementExpenses]=useState<Expense[]>([]);const [movementSubcategoryExpenses,setMovementSubcategoryExpenses]=useState<Expense[]|null>(null);const [movementLoading,setMovementLoading]=useState(false)
   const [editingExpense,setEditingExpense]=useState<Expense|null>(null);const [dataRevision,setDataRevision]=useState(0);const [overviewRefreshing,setOverviewRefreshing]=useState(false)
   const [movementCategoryId,setMovementCategoryId]=useState<string>()
   const [movementSubcategoryId,setMovementSubcategoryId]=useState<string>()
+  const [movementInsightFilter,setMovementInsightFilter]=useState<InsightExpenseFilter>()
   const [creatingRecurring,setCreatingRecurring]=useState(false)
   const [editingRecurring,setEditingRecurring]=useState<RecurringExpense|null>(null)
   const [creatingHousehold,setCreatingHousehold]=useState(false)
@@ -933,8 +987,8 @@ function App() {
     if(next.id===household?.id)return
     localStorage.setItem('fings_active_household_id',next.id)
     setModal(null);setEditingExpense(null);setCreatingRecurring(false);setEditingRecurring(null)
-    setMovementCategoryId(undefined);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null)
-    setCategories([]);setExpenses([]);setMovementExpenses([]);setDashboard(undefined);setBudgets([]);setRecurring([])
+    setMovementCategoryId(undefined);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementInsightFilter(undefined)
+    setCategories([]);setExpenses([]);setMovementExpenses([]);setDashboard(undefined);setInsights(undefined);setBudgets([]);setRecurring([])
     setHousehold(next)
   }
 
@@ -946,18 +1000,19 @@ function App() {
     if(next){localStorage.setItem('fings_active_household_id',next.id);setHousehold(next)}else{localStorage.removeItem('fings_active_household_id');setHousehold(undefined)}
   }
 
-  useEffect(()=>{const clearSession=()=>{localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined)};window.addEventListener('fings:unauthorized',clearSession);return()=>window.removeEventListener('fings:unauthorized',clearSession)},[])
+  useEffect(()=>{const clearSession=()=>{localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setInsights(undefined)};window.addEventListener('fings:unauthorized',clearSession);return()=>window.removeEventListener('fings:unauthorized',clearSession)},[])
   useEffect(()=>{if(!token)return;setLoading(true);setLoadError('');(async()=>{try{const [me,initialHouseholds]=await Promise.all([api.me(token),api.households(token)]);setUser(me);setHouseholds(initialHouseholds);const storedId=localStorage.getItem('fings_active_household_id');const initial=initialHouseholds.find(item=>item.id===storedId)||initialHouseholds.find(item=>item.type==='Personal')||initialHouseholds[0];if(initial){localStorage.setItem('fings_active_household_id',initial.id);setHousehold(initial)}const pendingInvitation=invitationCodeFromUrl();if(pendingInvitation){try{await api.acceptHouseholdInvitation(pendingInvitation,token);const nextHouseholds=await api.households(token);const joined=nextHouseholds.find(item=>!initialHouseholds.some(existing=>existing.id===item.id))||initial;setHouseholds(nextHouseholds);if(joined){localStorage.setItem('fings_active_household_id',joined.id);setHousehold(joined)}clearInvitationFromUrl()}catch(error){setLoadError(error instanceof ApiError?error.message:'Não foi possível aceitar o convite.')}}}catch(e){setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar a conta.')}finally{setLoading(false)}})()},[token])
-  useEffect(()=>{if(!token||!household)return;const controller=new AbortController();setLoading(true);setLoadError('');setCategories([]);setExpenses([]);setDashboard(undefined);setBudgets([]);setRecurring([]);const month=String(period.month).padStart(2,'0');const from=`${period.year}-${month}-01`;const to=`${period.year}-${month}-${String(new Date(period.year,period.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.categories(household.id,token,controller.signal),api.expenses(household.id,from,to,token,controller.signal),api.dashboard(household.id,period.year,period.month,token,controller.signal),api.budgets(household.id,token,controller.signal),api.recurringExpenses(household.id,token,controller.signal)]).then(([c,e,d,b,r])=>{if(controller.signal.aborted)return;setCategories(c);setExpenses(e);setDashboard(d);setBudgets(b);setRecurring(r)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os dados.')}).finally(()=>{if(!controller.signal.aborted)setLoading(false)});return()=>controller.abort()},[household?.id,token,period,dataRevision])
-  useEffect(()=>{if(!token||!household||view!=='expenses')return;const controller=new AbortController();setMovementLoading(true);setMovementExpenses([]);setMovementSubcategoryExpenses(movementSubcategoryId?[]:null);const month=String(movementPeriod.month).padStart(2,'0');const from=`${movementPeriod.year}-${month}-01`;const to=`${movementPeriod.year}-${month}-${String(new Date(movementPeriod.year,movementPeriod.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.expenses(household.id,from,to,token,controller.signal),movementSubcategoryId?api.expensesBySubcategory(household.id,movementSubcategoryId,from,to,token,controller.signal):Promise.resolve(null)]).then(([all,subcategory])=>{if(controller.signal.aborted)return;setMovementExpenses(all);setMovementSubcategoryExpenses(subcategory)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os movimentos.')}).finally(()=>{if(!controller.signal.aborted)setMovementLoading(false)});return()=>controller.abort()},[household?.id,token,view,movementPeriod,movementSubcategoryId,dataRevision])
+  useEffect(()=>{if(!token||!household)return;const controller=new AbortController();setLoading(true);setLoadError('');setCategories([]);setExpenses([]);setDashboard(undefined);setInsights(undefined);setBudgets([]);setRecurring([]);const month=String(period.month).padStart(2,'0');const from=`${period.year}-${month}-01`;const to=`${period.year}-${month}-${String(new Date(period.year,period.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.categories(household.id,token,controller.signal),api.expenses(household.id,from,to,token,controller.signal),api.dashboard(household.id,period.year,period.month,token,controller.signal),api.insights(household.id,period.year,period.month,token,controller.signal),api.budgets(household.id,token,controller.signal),api.recurringExpenses(household.id,token,controller.signal)]).then(([c,e,d,i,b,r])=>{if(controller.signal.aborted)return;setCategories(c);setExpenses(e);setDashboard(d);setInsights(i);setBudgets(b);setRecurring(r)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os dados.')}).finally(()=>{if(!controller.signal.aborted)setLoading(false)});return()=>controller.abort()},[household?.id,token,period,dataRevision])
+  useEffect(()=>{if(!token||!household||view!=='expenses')return;const controller=new AbortController();setMovementLoading(true);setMovementExpenses([]);setMovementSubcategoryExpenses(movementSubcategoryId&&!movementInsightFilter?[]:null);const month=String(movementPeriod.month).padStart(2,'0');const from=movementInsightFilter?.from||`${movementPeriod.year}-${month}-01`;const to=movementInsightFilter?.to||`${movementPeriod.year}-${month}-${String(new Date(movementPeriod.year,movementPeriod.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.expenses(household.id,from,to,token,controller.signal),movementSubcategoryId&&!movementInsightFilter?api.expensesBySubcategory(household.id,movementSubcategoryId,from,to,token,controller.signal):Promise.resolve(null)]).then(([all,subcategory])=>{if(controller.signal.aborted)return;setMovementExpenses(all);setMovementSubcategoryExpenses(subcategory)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os movimentos.')}).finally(()=>{if(!controller.signal.aborted)setMovementLoading(false)});return()=>controller.abort()},[household?.id,token,view,movementPeriod,movementSubcategoryId,movementInsightFilter,dataRevision])
   const title=useMemo(()=>({overview:'Visão geral',expenses:'Movimentos',budgets:'Orçamentos',recurring:'Recorrentes',help:'Ajuda',settings:'Definições'})[view],[view]);useEffect(()=>{document.title=`${title} — Fings`},[title])
   function login(t:string){localStorage.setItem('fings_token',t);sessionStorage.removeItem('fings_token');setToken(t)}
-  async function logout(){try{await removeCurrentPushSubscription(token)}finally{localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setView('overview')}}
+  async function logout(){try{await removeCurrentPushSubscription(token)}finally{localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setInsights(undefined);setView('overview')}}
   function changePeriod(offset:number){setPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
-  function changeMovementPeriod(offset:number){setMovementCategoryId(undefined);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
-  function changeMovementCategory(categoryId?:string){setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementCategoryId(categoryId)}
-  function changeMovementSubcategory(subcategoryId?:string){setMovementCategoryId(undefined);setMovementSubcategoryId(subcategoryId);if(!subcategoryId)setMovementSubcategoryExpenses(null)}
-  function openCategoryMovements(categoryId:string,subcategoryId?:string){setMovementPeriod(period);setMovementSubcategoryId(subcategoryId);setMovementSubcategoryExpenses(null);setMovementCategoryId(categoryId);setView('expenses')}
+  function changeMovementPeriod(offset:number){setMovementInsightFilter(undefined);setMovementCategoryId(undefined);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
+  function changeMovementCategory(categoryId?:string){setMovementInsightFilter(undefined);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementCategoryId(categoryId)}
+  function changeMovementSubcategory(subcategoryId?:string){setMovementInsightFilter(undefined);setMovementCategoryId(undefined);setMovementSubcategoryId(subcategoryId);if(!subcategoryId)setMovementSubcategoryExpenses(null)}
+  function openCategoryMovements(categoryId:string,subcategoryId?:string){setMovementInsightFilter(undefined);setMovementPeriod(period);setMovementSubcategoryId(subcategoryId);setMovementSubcategoryExpenses(null);setMovementCategoryId(categoryId);setView('expenses')}
+  function openInsightMovements(filter:InsightExpenseFilter){const [year,month]=filter.from.split('-').map(Number);setMovementPeriod({year,month});setMovementCategoryId(undefined);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementInsightFilter(filter);setView('expenses')}
   function openFinancialModal(next:Modal){if(!householdReadOnly)setModal(next)}
   function openNotificationSettings(){setSettingsInitialTab('notifications');setView('settings')}
   function openNotificationAction(actionUrl?:string|null,notificationHouseholdId?:string|null){
@@ -976,7 +1031,7 @@ function App() {
     if(!token||!household||overviewRefreshing)return
     setOverviewRefreshing(true);setLoadError('')
     const month=String(period.month).padStart(2,'0');const from=`${period.year}-${month}-01`;const to=`${period.year}-${month}-${String(new Date(period.year,period.month,0).getDate()).padStart(2,'0')}`
-    try{const [c,e,d,b,r]=await Promise.all([api.categories(household.id,token),api.expenses(household.id,from,to,token),api.dashboard(household.id,period.year,period.month,token),api.budgets(household.id,token),api.recurringExpenses(household.id,token)]);setCategories(c);setExpenses(e);setDashboard(d);setBudgets(b);setRecurring(r)}
+    try{const [c,e,d,i,b,r]=await Promise.all([api.categories(household.id,token),api.expenses(household.id,from,to,token),api.dashboard(household.id,period.year,period.month,token),api.insights(household.id,period.year,period.month,token),api.budgets(household.id,token),api.recurringExpenses(household.id,token)]);setCategories(c);setExpenses(e);setDashboard(d);setInsights(i);setBudgets(b);setRecurring(r)}
     catch(error){setLoadError(error instanceof ApiError?error.message:'Não foi possível atualizar a visão geral.')}
     finally{setOverviewRefreshing(false)}
   }
@@ -989,7 +1044,7 @@ function App() {
       <main className="content">
         {loadError&&<div className="page-error">{loadError}</div>}
         {loading?<div className="page-loader"><LoaderCircle className="spin"/><span>A organizar as tuas finanças…</span></div>:<>
-          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={openFinancialModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview} onCategorySelect={openCategoryMovements} householdId={householdId} token={token} dataRevision={dataRevision}/>}
+          {view==='overview'&&<Overview dashboard={dashboard} insights={insights} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={openFinancialModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview} onCategorySelect={openCategoryMovements} onInsightExpenses={openInsightMovements} householdId={householdId} token={token} dataRevision={dataRevision}/>}
           {view==='expenses'&&<ExpensesPage
             expenses={movementSubcategoryExpenses??movementExpenses}
             allExpenses={movementExpenses}
@@ -1010,6 +1065,8 @@ function App() {
             onCategoryChange={changeMovementCategory}
             selectedSubcategoryId={movementSubcategoryId}
             onSubcategoryChange={changeMovementSubcategory}
+            insightFilter={movementInsightFilter}
+            onClearInsightFilter={()=>setMovementInsightFilter(undefined)}
             focusExpenseId={notificationExpenseId}
           />}
           {view==='budgets'&&<BudgetsPage dashboard={dashboard} budgets={budgets} openModal={setModal}/>} 
@@ -1024,7 +1081,7 @@ function App() {
     {modal==='import'&&<ImportExpensesModal categories={categories} householdId={householdId} token={token} destination={movementPeriod} onClose={()=>setModal(null)} onImported={()=>setDataRevision(current=>current+1)}/>}
     {editingExpense&&<ExpenseModal item={editingExpense} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingExpense(null)} onSaved={()=>setDataRevision(current=>current+1)}/>} 
     {modal==='receipt'&&<ReceiptModal householdId={householdId} token={token} categories={categories} onClose={()=>setModal(null)} onCreated={()=>setDataRevision(current=>current+1)}/>} 
-    {modal==='budget'&&<BudgetModal householdId={householdId} token={token} onClose={()=>setModal(null)} onCreated={b=>setBudgets([b,...budgets])}/>} 
+    {modal==='budget'&&<BudgetModal householdId={householdId} token={token} onClose={()=>setModal(null)} onCreated={b=>{setBudgets([b,...budgets]);setDataRevision(current=>current+1)}}/>}
     {creatingHousehold&&<CreateHouseholdModal token={token} onClose={()=>setCreatingHousehold(false)} onCreated={created=>{setHouseholds(current=>[...current,created]);selectHousehold(created)}}/>}
     {creatingRecurring&&<RecurringExpenseModal categories={categories} householdId={householdId} token={token} onClose={()=>setCreatingRecurring(false)} onSaved={created=>{setRecurring(current=>[created,...current]);void refreshOverview()}}/>}
     {editingRecurring&&<RecurringExpenseModal item={editingRecurring} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingRecurring(null)} onSaved={updated=>{setRecurring(current=>current.map(item=>item.id===updated.id?updated:item));void refreshOverview()}}/>}

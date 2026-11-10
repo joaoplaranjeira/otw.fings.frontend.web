@@ -92,6 +92,22 @@ export type Dashboard = {
   month: string; budget: number; plannedIncome: number; confirmedExpenses: number; available: number
   categories: { categoryId: string; categoryName: string; budget: number | null; spent: number; available: number | null }[]
 }
+export type InsightType =
+  | 'BudgetPace' | 'SpendingTrend' | 'SpendingDriver' | 'UnusualExpense' | 'SmallExpenses'
+  | 'MerchantConcentration' | 'RecurringCommitments' | 'PotentialSubscriptions' | 'BudgetAccuracy' | 'DataQuality'
+export type InsightSeverity = 'Information' | 'Positive' | 'Warning' | 'Critical'
+export type InsightMetric = { key: string; label: string; value: number; unit: string }
+export type InsightExpenseFilter = {
+  from: string; to: string; categoryId: string | null; subcategoryId: string | null
+  merchantName: string | null; maximumAmount: number | null; origin: 'Manual' | 'Recurring' | 'Receipt' | null
+}
+export type FinancialInsight = {
+  id: string; type: InsightType; severity: InsightSeverity; title: string; explanation: string
+  confidence: number; sampleSize: number; metrics: InsightMetric[]; expenseFilter: InsightExpenseFilter | null
+}
+export type HouseholdInsightsResponse = {
+  month: string; generatedAtUtc: string; currency: string; historyMonths: number; insights: FinancialInsight[]
+}
 export type Budget = {
   id: string; name: string; startMonth: string; endMonth: string; monthlyAmount: number; status: number; generatedIncomeCount: number
   allocations: { categoryId: string; categoryName: string; monthlyAmount: number }[]
@@ -156,6 +172,7 @@ export const api = {
   expensesBySubcategory: (householdId: string, subcategoryId: string, from: string, to: string, token: string, signal?: AbortSignal) => request<Expense[]>(`/api/households/${householdId}/expenses/subcategories/${encodeURIComponent(subcategoryId)}?from=${from}&to=${to}`, { signal }, token),
   expenseSuggestions: (householdId: string, token: string) => request<ExpenseSuggestion[]>(`/api/households/${householdId}/expenses/suggestions`, {}, token),
   dashboard: (householdId: string, year: number, month: number, token: string, signal?: AbortSignal) => request<Dashboard>(`/api/households/${householdId}/dashboard/${year}/${month}`, { signal }, token),
+  insights: (householdId: string, year: number, month: number, token: string, signal?: AbortSignal) => request<HouseholdInsightsResponse>(`/api/households/${householdId}/insights/${year}/${month}`, { signal }, token),
   budgets: (householdId: string, token: string, signal?: AbortSignal) => request<Budget[]>(`/api/households/${householdId}/budgets`, { signal }, token),
   recurringExpenses: (householdId: string, token: string, signal?: AbortSignal) => request<RecurringExpense[]>(`/api/households/${householdId}/recurring-expenses`, { signal }, token),
   createRecurringExpense: (householdId: string, data: CreateRecurringExpensePayload, token: string) => request<RecurringExpense>(`/api/households/${householdId}/recurring-expenses`, { method: 'POST', body: JSON.stringify(data) }, token),
