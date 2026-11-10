@@ -385,14 +385,28 @@ function insightSampleLabel(insight:FinancialInsight){
 
 function InsightsSection({response,onOpenExpenses}:{response?:HouseholdInsightsResponse;onOpenExpenses:(filter:InsightExpenseFilter)=>void}){
   const insights=response?.insights||[]
+  const carouselRef=useRef<HTMLDivElement>(null)
+  const [activeInsight,setActiveInsight]=useState(0)
+  useEffect(()=>{setActiveInsight(0);carouselRef.current?.scrollTo({left:0})},[response?.month])
+  function moveCarousel(index:number){
+    const next=Math.max(0,Math.min(insights.length-1,index));const track=carouselRef.current;const card=track?.children[next] as HTMLElement|undefined
+    if(track&&card)track.scrollTo({left:card.offsetLeft-track.offsetLeft,behavior:'smooth'})
+    setActiveInsight(next)
+  }
+  function syncCarousel(){
+    const track=carouselRef.current;if(!track)return
+    const cards=[...track.children] as HTMLElement[];const left=track.scrollLeft
+    const closest=cards.reduce((best,card,index)=>Math.abs(card.offsetLeft-track.offsetLeft-left)<best.distance?{index,distance:Math.abs(card.offsetLeft-track.offsetLeft-left)}:best,{index:0,distance:Number.POSITIVE_INFINITY})
+    setActiveInsight(closest.index)
+  }
   return <section className="insights-section" aria-labelledby="insights-title">
-    <header className="insights-heading"><div><span className="card-label">INSIGHTS FINGS</span><h2 id="insights-title">O que os teus dados mostram</h2><p>Conclusões calculadas a partir dos movimentos, orçamentos e recorrências deste agregado.</p></div>{response&&<span>{response.historyMonths} {response.historyMonths===1?'mês':'meses'} de histórico</span>}</header>
-    {insights.length?<div className="insights-grid">{insights.map((insight,index)=>{const visual=insightVisuals[insight.type];const Icon=visual.icon;const confidenceNote=insight.confidence<.7?'Estimativa inicial':insight.confidence<.85?'Baseado em histórico limitado':'';return <article className={`insight-card severity-${insight.severity.toLowerCase()} ${index===0?'insight-featured':''}`} key={`${insight.type}-${insight.id}`}>
+    <header className="insights-heading"><div><span className="card-label">INSIGHTS FINGS</span><h2 id="insights-title">O que os teus dados mostram</h2><p>Conclusões calculadas a partir dos movimentos, orçamentos e recorrências deste agregado.</p></div>{response&&<div className="insights-carousel-actions"><span>{response.historyMonths} {response.historyMonths===1?'mês':'meses'} de histórico</span>{insights.length>1&&<div><button type="button" aria-label="Insight anterior" disabled={activeInsight===0} onClick={()=>moveCarousel(activeInsight-1)}><ArrowLeft/></button><strong>{activeInsight+1} <small>/ {insights.length}</small></strong><button type="button" aria-label="Insight seguinte" disabled={activeInsight===insights.length-1} onClick={()=>moveCarousel(activeInsight+1)}><ArrowRight/></button></div>}</div>}</header>
+    {insights.length?<><div ref={carouselRef} className="insights-grid" role="region" aria-roledescription="carrossel" aria-label="Insights financeiros" tabIndex={0} onScroll={syncCarousel} onKeyDown={event=>{if(event.key==='ArrowLeft'){event.preventDefault();moveCarousel(activeInsight-1)}if(event.key==='ArrowRight'){event.preventDefault();moveCarousel(activeInsight+1)}}}>{insights.map((insight,index)=>{const visual=insightVisuals[insight.type];const Icon=visual.icon;const confidenceNote=insight.confidence<.7?'Estimativa inicial':insight.confidence<.85?'Baseado em histórico limitado':'';return <article className={`insight-card severity-${insight.severity.toLowerCase()}`} aria-label={`${index+1} de ${insights.length}: ${insight.title}`} key={`${insight.type}-${insight.id}`}>
       <header><span className="insight-card-icon"><Icon/></span><div><small>{visual.label}</small><h3>{insight.title}</h3></div><span className="insight-severity"><i aria-hidden="true"/>{insightSeverityLabels[insight.severity]}</span></header>
       <p>{insight.explanation}</p>
       {insight.metrics.length>0&&<dl className="insight-metrics">{insight.metrics.map(metric=><div key={metric.key}><dt>{metric.label}</dt><dd>{formatInsightMetric(metric,response!.currency)}</dd></div>)}</dl>}
       <footer><div><span>{insightSampleLabel(insight)}</span>{confidenceNote&&<span className="insight-confidence">{confidenceNote}</span>}</div>{insight.expenseFilter&&<button type="button" onClick={()=>onOpenExpenses(insight.expenseFilter!)}>Ver movimentos <ArrowRight size={14}/></button>}</footer>
-    </article>})}</div>:<div className="insights-empty"><span><Lightbulb/></span><div><h3>Ainda não existe histórico suficiente para gerar insights.</h3><p>Continua a registar despesas e volta a consultar esta área.</p></div></div>}
+    </article>})}</div><div className="insights-carousel-dots" aria-label="Selecionar insight">{insights.map((insight,index)=><button type="button" className={activeInsight===index?'active':''} aria-label={`Mostrar insight ${index+1}: ${insight.title}`} aria-current={activeInsight===index?'true':undefined} onClick={()=>moveCarousel(index)} key={`${insight.id}-dot`}/>)}</div></>:<div className="insights-empty"><span><Lightbulb/></span><div><h3>Ainda não existe histórico suficiente para gerar insights.</h3><p>Continua a registar despesas e volta a consultar esta área.</p></div></div>}
   </section>
 }
 
