@@ -9,11 +9,12 @@ import {
 import { api, ApiError, type Budget, type Category, type Dashboard, type Expense, type ExpensePayloadLine, type ExpenseSuggestion, type FinancialInsight, type Household, type HouseholdInsightsResponse, type HouseholdInvitation, type HouseholdInvitationPreview, type HouseholdMember, type HouseholdRelationship, type HouseholdRole, type InsightExpenseFilter, type InsightMetric, type InsightSeverity, type InsightType, type ReceiptImageQuality, type ReceiptParseLine, type ReceiptParseResult, type RecurringExpense, type RecurringExpenseMaterialization, type User } from './api'
 import { NotificationCenter, NotificationSettings, removeCurrentPushSubscription } from './notifications'
 
-type View = 'overview' | 'expenses' | 'budgets' | 'recurring' | 'help' | 'settings'
+type View = 'overview' | 'insights' | 'expenses' | 'budgets' | 'recurring' | 'help' | 'settings'
 type Modal = 'expense' | 'receipt' | 'budget' | 'import' | null
 
 function viewFromLocation():View {
   const requested=new URLSearchParams(window.location.search).get('view')
+  if(requested==='insights')return 'insights'
   if(requested==='expenses')return 'expenses'
   if(requested==='budget'||requested==='budgets')return 'budgets'
   if(requested==='recurring')return 'recurring'
@@ -213,7 +214,7 @@ function Auth({ onAuthenticated }: { onAuthenticated: (token: string) => void })
 
 function Sidebar({ view, setView, mobileOpen, close, onLogout }: { view: View; setView: (v: View) => void; mobileOpen: boolean; close: () => void; onLogout: () => void }) {
   const nav = [
-    ['overview', LayoutDashboard, 'Visão geral'], ['expenses', ReceiptText, 'Movimentos'],
+    ['overview', LayoutDashboard, 'Visão geral'], ['insights', Lightbulb, 'Insights'], ['expenses', ReceiptText, 'Movimentos'],
     ['budgets', WalletCards, 'Orçamentos'], ['recurring', Repeat2, 'Recorrentes'],
   ] as const
   return <><aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
@@ -386,7 +387,7 @@ function InsightsSection({response,onOpenExpenses}:{response?:HouseholdInsightsR
   const insights=response?.insights||[]
   return <section className="insights-section" aria-labelledby="insights-title">
     <header className="insights-heading"><div><span className="card-label">INSIGHTS FINGS</span><h2 id="insights-title">O que os teus dados mostram</h2><p>Conclusões calculadas a partir dos movimentos, orçamentos e recorrências deste agregado.</p></div>{response&&<span>{response.historyMonths} {response.historyMonths===1?'mês':'meses'} de histórico</span>}</header>
-    {insights.length?<div className="insights-grid">{insights.map(insight=>{const visual=insightVisuals[insight.type];const Icon=visual.icon;const confidenceNote=insight.confidence<.7?'Estimativa inicial':insight.confidence<.85?'Baseado em histórico limitado':'';return <article className={`insight-card severity-${insight.severity.toLowerCase()}`} key={`${insight.type}-${insight.id}`}>
+    {insights.length?<div className="insights-grid">{insights.map((insight,index)=>{const visual=insightVisuals[insight.type];const Icon=visual.icon;const confidenceNote=insight.confidence<.7?'Estimativa inicial':insight.confidence<.85?'Baseado em histórico limitado':'';return <article className={`insight-card severity-${insight.severity.toLowerCase()} ${index===0?'insight-featured':''}`} key={`${insight.type}-${insight.id}`}>
       <header><span className="insight-card-icon"><Icon/></span><div><small>{visual.label}</small><h3>{insight.title}</h3></div><span className="insight-severity"><i aria-hidden="true"/>{insightSeverityLabels[insight.severity]}</span></header>
       <p>{insight.explanation}</p>
       {insight.metrics.length>0&&<dl className="insight-metrics">{insight.metrics.map(metric=><div key={metric.key}><dt>{metric.label}</dt><dd>{formatInsightMetric(metric,response!.currency)}</dd></div>)}</dl>}
@@ -395,7 +396,19 @@ function InsightsSection({response,onOpenExpenses}:{response?:HouseholdInsightsR
   </section>
 }
 
-function Overview({ dashboard, insights, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh, onCategorySelect, onInsightExpenses, householdId, token, dataRevision }: { dashboard?: Dashboard; insights?:HouseholdInsightsResponse; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void; onCategorySelect:(categoryId:string,subcategoryId?:string)=>void;onInsightExpenses:(filter:InsightExpenseFilter)=>void;householdId:string;token:string;dataRevision:number }) {
+function InsightsPage({response,periodLabel,changePeriod,refreshing,onRefresh,onOpenExpenses}:{response?:HouseholdInsightsResponse;periodLabel:string;changePeriod:(offset:number)=>void;refreshing:boolean;onRefresh:()=>void;onOpenExpenses:(filter:InsightExpenseFilter)=>void}){
+  const count=response?.insights.length||0
+  const important=response?.insights.filter(insight=>insight.severity==='Critical'||insight.severity==='Warning').length||0
+  const generated=response?.generatedAtUtc?new Intl.DateTimeFormat('pt-PT',{dateStyle:'medium',timeStyle:'short'}).format(new Date(response.generatedAtUtc)):''
+  return <div className="insights-page">
+    <div className="page-heading"><div><p className="section-kicker">ANÁLISE FINANCEIRA</p><h1>Insights</h1><p className="page-subtitle">Sinais úteis sobre os teus hábitos, orçamento e qualidade dos dados.</p></div><button type="button" className={`overview-refresh ${refreshing?'refreshing':''}`} onClick={onRefresh} disabled={refreshing}><span><RefreshCw size={16}/></span><div><strong>{refreshing?'A atualizar…':'Atualizar insights'}</strong><small>Recalcular com os dados atuais</small></div></button></div>
+    <div className="insights-period"><MonthNavigator label={periodLabel} onChange={changePeriod}/>{response&&<small>Calculados em {generated}</small>}</div>
+    <section className="insights-hero"><div><span><Sparkles/></span><div><small>LEITURA DO MÊS</small><h2>{count?`${count} ${count===1?'conclusão encontrada':'conclusões encontradas'}`:'O histórico ainda está a crescer'}</h2><p>{important?`${important} ${important===1?'ponto merece':'pontos merecem'} a tua atenção neste período.`:'Não existem alertas relevantes neste período.'}</p></div></div><div className="insights-hero-stats"><span><strong>{response?.historyMonths??0}</strong><small>MESES DE HISTÓRICO</small></span><span><strong>{important}</strong><small>A REVER</small></span></div></section>
+    <InsightsSection response={response} onOpenExpenses={onOpenExpenses}/>
+  </div>
+}
+
+function Overview({ dashboard, expenses, categories, user, periodLabel, changePeriod, openModal, setView, refreshing, onRefresh, onCategorySelect, householdId, token, dataRevision }: { dashboard?: Dashboard; expenses: Expense[]; categories: Category[]; user:User; periodLabel:string; changePeriod:(offset:number)=>void; openModal: (m: Modal) => void; setView: (v: View) => void; refreshing:boolean; onRefresh:()=>void; onCategorySelect:(categoryId:string,subcategoryId?:string)=>void;householdId:string;token:string;dataRevision:number }) {
   const [spendingBreakdown,setSpendingBreakdown]=useState<'categories'|'subcategories'>('categories')
   const pct = dashboard?.budget ? Math.min(100, dashboard.confirmedExpenses / dashboard.budget * 100) : null
   const savingRate=dashboard?.plannedIncome ? (dashboard.plannedIncome-dashboard.confirmedExpenses)/dashboard.plannedIncome*100 : null
@@ -453,7 +466,6 @@ function Overview({ dashboard, insights, expenses, categories, user, periodLabel
       <MonthlyExpenseComparison key={`${householdId}-all`} householdId={householdId} token={token} categories={categories} revision={dataRevision}/>
       <MonthlyExpenseComparison key={`${householdId}-category`} householdId={householdId} token={token} categories={categories} categoryMode revision={dataRevision}/>
     </section>
-    <InsightsSection response={insights} onOpenExpenses={onInsightExpenses}/>
   </>
 }
 
@@ -1004,7 +1016,7 @@ function App() {
   useEffect(()=>{if(!token)return;setLoading(true);setLoadError('');(async()=>{try{const [me,initialHouseholds]=await Promise.all([api.me(token),api.households(token)]);setUser(me);setHouseholds(initialHouseholds);const storedId=localStorage.getItem('fings_active_household_id');const initial=initialHouseholds.find(item=>item.id===storedId)||initialHouseholds.find(item=>item.type==='Personal')||initialHouseholds[0];if(initial){localStorage.setItem('fings_active_household_id',initial.id);setHousehold(initial)}const pendingInvitation=invitationCodeFromUrl();if(pendingInvitation){try{await api.acceptHouseholdInvitation(pendingInvitation,token);const nextHouseholds=await api.households(token);const joined=nextHouseholds.find(item=>!initialHouseholds.some(existing=>existing.id===item.id))||initial;setHouseholds(nextHouseholds);if(joined){localStorage.setItem('fings_active_household_id',joined.id);setHousehold(joined)}clearInvitationFromUrl()}catch(error){setLoadError(error instanceof ApiError?error.message:'Não foi possível aceitar o convite.')}}}catch(e){setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar a conta.')}finally{setLoading(false)}})()},[token])
   useEffect(()=>{if(!token||!household)return;const controller=new AbortController();setLoading(true);setLoadError('');setCategories([]);setExpenses([]);setDashboard(undefined);setInsights(undefined);setBudgets([]);setRecurring([]);const month=String(period.month).padStart(2,'0');const from=`${period.year}-${month}-01`;const to=`${period.year}-${month}-${String(new Date(period.year,period.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.categories(household.id,token,controller.signal),api.expenses(household.id,from,to,token,controller.signal),api.dashboard(household.id,period.year,period.month,token,controller.signal),api.insights(household.id,period.year,period.month,token,controller.signal),api.budgets(household.id,token,controller.signal),api.recurringExpenses(household.id,token,controller.signal)]).then(([c,e,d,i,b,r])=>{if(controller.signal.aborted)return;setCategories(c);setExpenses(e);setDashboard(d);setInsights(i);setBudgets(b);setRecurring(r)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os dados.')}).finally(()=>{if(!controller.signal.aborted)setLoading(false)});return()=>controller.abort()},[household?.id,token,period,dataRevision])
   useEffect(()=>{if(!token||!household||view!=='expenses')return;const controller=new AbortController();setMovementLoading(true);setMovementExpenses([]);setMovementSubcategoryExpenses(movementSubcategoryId&&!movementInsightFilter?[]:null);const month=String(movementPeriod.month).padStart(2,'0');const from=movementInsightFilter?.from||`${movementPeriod.year}-${month}-01`;const to=movementInsightFilter?.to||`${movementPeriod.year}-${month}-${String(new Date(movementPeriod.year,movementPeriod.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.expenses(household.id,from,to,token,controller.signal),movementSubcategoryId&&!movementInsightFilter?api.expensesBySubcategory(household.id,movementSubcategoryId,from,to,token,controller.signal):Promise.resolve(null)]).then(([all,subcategory])=>{if(controller.signal.aborted)return;setMovementExpenses(all);setMovementSubcategoryExpenses(subcategory)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os movimentos.')}).finally(()=>{if(!controller.signal.aborted)setMovementLoading(false)});return()=>controller.abort()},[household?.id,token,view,movementPeriod,movementSubcategoryId,movementInsightFilter,dataRevision])
-  const title=useMemo(()=>({overview:'Visão geral',expenses:'Movimentos',budgets:'Orçamentos',recurring:'Recorrentes',help:'Ajuda',settings:'Definições'})[view],[view]);useEffect(()=>{document.title=`${title} — Fings`},[title])
+  const title=useMemo(()=>({overview:'Visão geral',insights:'Insights',expenses:'Movimentos',budgets:'Orçamentos',recurring:'Recorrentes',help:'Ajuda',settings:'Definições'})[view],[view]);useEffect(()=>{document.title=`${title} — Fings`},[title])
   function login(t:string){localStorage.setItem('fings_token',t);sessionStorage.removeItem('fings_token');setToken(t)}
   async function logout(){try{await removeCurrentPushSubscription(token)}finally{localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setInsights(undefined);setView('overview')}}
   function changePeriod(offset:number){setPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
@@ -1022,7 +1034,7 @@ function App() {
       const url=new URL(actionUrl,window.location.origin)
       const requested=url.searchParams.get('view')
       setNotificationExpenseId(url.searchParams.get('expenseId')||undefined)
-      const nextView:View|undefined=requested==='expenses'?'expenses':requested==='budget'||requested==='budgets'?'budgets':requested==='recurring'?'recurring':requested==='settings'?'settings':requested==='help'?'help':requested==='overview'?'overview':undefined
+      const nextView:View|undefined=requested==='insights'?'insights':requested==='expenses'?'expenses':requested==='budget'||requested==='budgets'?'budgets':requested==='recurring'?'recurring':requested==='settings'?'settings':requested==='help'?'help':requested==='overview'?'overview':undefined
       if(nextView)setView(nextView)
       window.history.replaceState({},'',url.pathname)
     }catch{setView('overview')}
@@ -1044,7 +1056,8 @@ function App() {
       <main className="content">
         {loadError&&<div className="page-error">{loadError}</div>}
         {loading?<div className="page-loader"><LoaderCircle className="spin"/><span>A organizar as tuas finanças…</span></div>:<>
-          {view==='overview'&&<Overview dashboard={dashboard} insights={insights} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={openFinancialModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview} onCategorySelect={openCategoryMovements} onInsightExpenses={openInsightMovements} householdId={householdId} token={token} dataRevision={dataRevision}/>}
+          {view==='overview'&&<Overview dashboard={dashboard} expenses={expenses} categories={categories} user={user} periodLabel={periodLabel} changePeriod={changePeriod} openModal={openFinancialModal} setView={setView} refreshing={overviewRefreshing} onRefresh={refreshOverview} onCategorySelect={openCategoryMovements} householdId={householdId} token={token} dataRevision={dataRevision}/>}
+          {view==='insights'&&<InsightsPage response={insights} periodLabel={periodLabel} changePeriod={changePeriod} refreshing={overviewRefreshing} onRefresh={refreshOverview} onOpenExpenses={openInsightMovements}/>}
           {view==='expenses'&&<ExpensesPage
             expenses={movementSubcategoryExpenses??movementExpenses}
             allExpenses={movementExpenses}
