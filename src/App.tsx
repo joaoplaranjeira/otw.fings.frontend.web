@@ -8,14 +8,17 @@ import {
 } from 'lucide-react'
 import { api, ApiError, type Budget, type Category, type Dashboard, type Expense, type ExpensePayloadLine, type ExpenseSuggestion, type FinancialInsight, type Household, type HouseholdInsightsResponse, type HouseholdInvitation, type HouseholdInvitationPreview, type HouseholdMember, type HouseholdRelationship, type HouseholdRole, type InsightExpenseFilter, type InsightMetric, type InsightSeverity, type InsightType, type ReceiptImageQuality, type ReceiptParseLine, type ReceiptParseResult, type RecurringExpense, type RecurringExpenseMaterialization, type User } from './api'
 import { NotificationCenter, NotificationSettings, removeCurrentPushSubscription } from './notifications'
+import { ExpenseMatchesModal, ShoppingListsPage } from './shopping'
+import type { ExpenseMatch } from './api'
 
-type View = 'overview' | 'insights' | 'expenses' | 'budgets' | 'recurring' | 'help' | 'settings'
+type View = 'overview' | 'insights' | 'expenses' | 'shopping' | 'budgets' | 'recurring' | 'help' | 'settings'
 type Modal = 'expense' | 'receipt' | 'budget' | 'import' | null
 
 function viewFromLocation():View {
   const requested=new URLSearchParams(window.location.search).get('view')
   if(requested==='insights')return 'insights'
   if(requested==='expenses')return 'expenses'
+  if(requested==='shopping'||requested==='shopping-lists')return 'shopping'
   if(requested==='budget'||requested==='budgets')return 'budgets'
   if(requested==='recurring')return 'recurring'
   if(requested==='help')return 'help'
@@ -215,7 +218,7 @@ function Auth({ onAuthenticated }: { onAuthenticated: (token: string) => void })
 function Sidebar({ view, setView, mobileOpen, close, onLogout }: { view: View; setView: (v: View) => void; mobileOpen: boolean; close: () => void; onLogout: () => void }) {
   const nav = [
     ['overview', LayoutDashboard, 'Visão geral'], ['insights', Lightbulb, 'Insights'], ['expenses', ReceiptText, 'Movimentos'],
-    ['budgets', WalletCards, 'Orçamentos'], ['recurring', Repeat2, 'Recorrentes'],
+    ['shopping', ShoppingBasket, 'Listas'], ['budgets', WalletCards, 'Orçamentos'], ['recurring', Repeat2, 'Recorrentes'],
   ] as const
   return <><aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
     <div className="sidebar-top"><Logo /><button className="mobile-close" onClick={close}><X /></button></div>
@@ -730,8 +733,8 @@ function ReceiptModal({ householdId, token, categories, onClose, onCreated }: { 
       const notes=changed?'O utilizador corrigiu o parse antes da confirmação.':null
       const lines:ExpensePayloadLine[]=result.lines.map(line=>line.isDiscount||line.amount<0?{categoryId:null,subcategoryId:null,description:line.description.trim(),quantity:null,unitPrice:null,amount:-Math.abs(line.amount)}:{categoryId:line.suggestedCategoryId!,subcategoryId:line.suggestedSubcategoryId||null,description:line.description.trim(),quantity:line.quantity??null,unitPrice:line.unitPrice??null,amount:line.amount})
       const created=await api.createExpense(householdId,{categoryId:null,subcategoryId:null,date:result.purchaseDate!,amount:result.total,description:result.documentNumber?`Talão ${result.documentNumber}`:result.merchantName?`Talão — ${result.merchantName}`:'Talão',merchantName:result.merchantName||null,merchantTaxNumber:result.merchantTaxNumber||null,origin:3,lines},token)
+      await api.validateReceiptParse(householdId,result.parseId,{isValid:!changed,notes},token).catch(()=>undefined)
       onCreated(created);onClose()
-      void api.validateReceiptParse(householdId,result.parseId,{isValid:!changed,notes},token).catch(()=>undefined)
     }catch(err){setError(err instanceof ApiError?err.message:'Não foi possível criar a despesa.')}
     finally{setLoading(false)}
   }
@@ -1003,6 +1006,7 @@ function App() {
   const [creatingHousehold,setCreatingHousehold]=useState(false)
   const [settingsInitialTab,setSettingsInitialTab]=useState<'profile'|'notifications'>('profile')
   const [notificationExpenseId,setNotificationExpenseId]=useState(()=>new URLSearchParams(window.location.search).get('expenseId')||undefined)
+  const [expenseMatchesToReview,setExpenseMatchesToReview]=useState<ExpenseMatch[]>([])
   const authenticated=!!token
   const householdId=household?.id||''
   const householdReadOnly=householdRoleName(household)==='Viewer'
@@ -1012,7 +1016,7 @@ function App() {
   function selectHousehold(next:Household){
     if(next.id===household?.id)return
     localStorage.setItem('fings_active_household_id',next.id)
-    setModal(null);setEditingExpense(null);setCreatingRecurring(false);setEditingRecurring(null)
+    setModal(null);setEditingExpense(null);setCreatingRecurring(false);setEditingRecurring(null);setExpenseMatchesToReview([])
     setMovementCategoryId(undefined);setMovementSubcategoryId(undefined);setMovementSubcategoryExpenses(null);setMovementInsightFilter(undefined)
     setCategories([]);setExpenses([]);setMovementExpenses([]);setDashboard(undefined);setInsights(undefined);setBudgets([]);setRecurring([])
     setHousehold(next)
@@ -1030,7 +1034,7 @@ function App() {
   useEffect(()=>{if(!token)return;setLoading(true);setLoadError('');(async()=>{try{const [me,initialHouseholds]=await Promise.all([api.me(token),api.households(token)]);setUser(me);setHouseholds(initialHouseholds);const storedId=localStorage.getItem('fings_active_household_id');const initial=initialHouseholds.find(item=>item.id===storedId)||initialHouseholds.find(item=>item.type==='Personal')||initialHouseholds[0];if(initial){localStorage.setItem('fings_active_household_id',initial.id);setHousehold(initial)}const pendingInvitation=invitationCodeFromUrl();if(pendingInvitation){try{await api.acceptHouseholdInvitation(pendingInvitation,token);const nextHouseholds=await api.households(token);const joined=nextHouseholds.find(item=>!initialHouseholds.some(existing=>existing.id===item.id))||initial;setHouseholds(nextHouseholds);if(joined){localStorage.setItem('fings_active_household_id',joined.id);setHousehold(joined)}clearInvitationFromUrl()}catch(error){setLoadError(error instanceof ApiError?error.message:'Não foi possível aceitar o convite.')}}}catch(e){setLoadError(e instanceof ApiError?e.message:'Não foi possível carregar a conta.')}finally{setLoading(false)}})()},[token])
   useEffect(()=>{if(!token||!household)return;const controller=new AbortController();setLoading(true);setLoadError('');setCategories([]);setExpenses([]);setDashboard(undefined);setInsights(undefined);setBudgets([]);setRecurring([]);const month=String(period.month).padStart(2,'0');const from=`${period.year}-${month}-01`;const to=`${period.year}-${month}-${String(new Date(period.year,period.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.categories(household.id,token,controller.signal),api.expenses(household.id,from,to,token,controller.signal),api.dashboard(household.id,period.year,period.month,token,controller.signal),api.insights(household.id,period.year,period.month,token,controller.signal),api.budgets(household.id,token,controller.signal),api.recurringExpenses(household.id,token,controller.signal)]).then(([c,e,d,i,b,r])=>{if(controller.signal.aborted)return;setCategories(c);setExpenses(e);setDashboard(d);setInsights(i);setBudgets(b);setRecurring(r)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os dados.')}).finally(()=>{if(!controller.signal.aborted)setLoading(false)});return()=>controller.abort()},[household?.id,token,period,dataRevision])
   useEffect(()=>{if(!token||!household||view!=='expenses')return;const controller=new AbortController();setMovementLoading(true);setMovementExpenses([]);setMovementSubcategoryExpenses(movementSubcategoryId&&!movementInsightFilter?[]:null);const month=String(movementPeriod.month).padStart(2,'0');const from=movementInsightFilter?.from||`${movementPeriod.year}-${month}-01`;const to=movementInsightFilter?.to||`${movementPeriod.year}-${month}-${String(new Date(movementPeriod.year,movementPeriod.month,0).getDate()).padStart(2,'0')}`;Promise.all([api.expenses(household.id,from,to,token,controller.signal),movementSubcategoryId&&!movementInsightFilter?api.expensesBySubcategory(household.id,movementSubcategoryId,from,to,token,controller.signal):Promise.resolve(null)]).then(([all,subcategory])=>{if(controller.signal.aborted)return;setMovementExpenses(all);setMovementSubcategoryExpenses(subcategory)}).catch(async error=>{if(controller.signal.aborted)return;if(error instanceof ApiError&&(error.status===403||error.status===404)){try{await recoverHousehold()}catch{setLoadError('Não foi possível recuperar um agregado válido.')}}else setLoadError(error instanceof ApiError?error.message:'Não foi possível carregar os movimentos.')}).finally(()=>{if(!controller.signal.aborted)setMovementLoading(false)});return()=>controller.abort()},[household?.id,token,view,movementPeriod,movementSubcategoryId,movementInsightFilter,dataRevision])
-  const title=useMemo(()=>({overview:'Visão geral',insights:'Insights',expenses:'Movimentos',budgets:'Orçamentos',recurring:'Recorrentes',help:'Ajuda',settings:'Definições'})[view],[view]);useEffect(()=>{document.title=`${title} — Fings`},[title])
+  const title=useMemo(()=>({overview:'Visão geral',insights:'Insights',expenses:'Movimentos',shopping:'Listas de compras',budgets:'Orçamentos',recurring:'Recorrentes',help:'Ajuda',settings:'Definições'})[view],[view]);useEffect(()=>{document.title=`${title} — Fings`},[title])
   function login(t:string){localStorage.setItem('fings_token',t);sessionStorage.removeItem('fings_token');setToken(t)}
   async function logout(){try{await removeCurrentPushSubscription(token)}finally{localStorage.removeItem('fings_token');sessionStorage.removeItem('fings_token');setToken('');setUser(undefined);setHousehold(undefined);setDashboard(undefined);setInsights(undefined);setView('overview')}}
   function changePeriod(offset:number){setPeriod(current=>{const date=new Date(current.year,current.month-1+offset,1);return {year:date.getFullYear(),month:date.getMonth()+1}})}
@@ -1048,7 +1052,7 @@ function App() {
       const url=new URL(actionUrl,window.location.origin)
       const requested=url.searchParams.get('view')
       setNotificationExpenseId(url.searchParams.get('expenseId')||undefined)
-      const nextView:View|undefined=requested==='insights'?'insights':requested==='expenses'?'expenses':requested==='budget'||requested==='budgets'?'budgets':requested==='recurring'?'recurring':requested==='settings'?'settings':requested==='help'?'help':requested==='overview'?'overview':undefined
+      const nextView:View|undefined=requested==='insights'?'insights':requested==='expenses'?'expenses':requested==='shopping'||requested==='shopping-lists'?'shopping':requested==='budget'||requested==='budgets'?'budgets':requested==='recurring'?'recurring':requested==='settings'?'settings':requested==='help'?'help':requested==='overview'?'overview':undefined
       if(nextView)setView(nextView)
       window.history.replaceState({},'',url.pathname)
     }catch{setView('overview')}
@@ -1060,6 +1064,14 @@ function App() {
     try{const [c,e,d,i,b,r]=await Promise.all([api.categories(household.id,token),api.expenses(household.id,from,to,token),api.dashboard(household.id,period.year,period.month,token),api.insights(household.id,period.year,period.month,token),api.budgets(household.id,token),api.recurringExpenses(household.id,token)]);setCategories(c);setExpenses(e);setDashboard(d);setInsights(i);setBudgets(b);setRecurring(r)}
     catch(error){setLoadError(error instanceof ApiError?error.message:'Não foi possível atualizar a visão geral.')}
     finally{setOverviewRefreshing(false)}
+  }
+  async function expenseSaved(saved:Expense, reviewMatches:boolean){
+    setDataRevision(current=>current+1)
+    if(!reviewMatches||!householdId)return
+    try{
+      const pending=await api.expenseMatches(householdId,token,'Pending')
+      setExpenseMatchesToReview(pending.filter(match=>match.expenseId===saved.id))
+    }catch{/* A despesa ficou guardada; os matches continuam disponíveis na área Listas. */}
   }
   if(!authenticated)return <Auth onAuthenticated={login}/>
   if(!user)return <div className="page-loader"><LoaderCircle className="spin"/><span>A carregar os dados da conta…</span></div>
@@ -1096,6 +1108,7 @@ function App() {
             onClearInsightFilter={()=>setMovementInsightFilter(undefined)}
             focusExpenseId={notificationExpenseId}
           />}
+          {view==='shopping'&&<ShoppingListsPage householdId={householdId} token={token} readOnly={householdReadOnly} revision={dataRevision}/>}
           {view==='budgets'&&<BudgetsPage dashboard={dashboard} budgets={budgets} openModal={setModal}/>} 
           {view==='recurring'&&<RecurringPage items={recurring} categories={categories} onCreate={()=>setCreatingRecurring(true)} onEdit={setEditingRecurring} onMaterialize={async item=>{const result=await api.materializeRecurringExpense(householdId,item.id,token);setRecurring(current=>current.map(existing=>existing.id===item.id?{...existing,nextOccurrenceDate:result.nextOccurrenceDate,isActive:result.isActive}:existing));setDataRevision(current=>current+1);return result}}/>}
           {view==='help'&&<HelpPage navigate={setView} openModal={openFinancialModal} openNotificationSettings={openNotificationSettings}/>}
@@ -1104,14 +1117,15 @@ function App() {
       </main>
       <PoweredBy className="app-powered" />
     </div>
-    {modal==='expense'&&<ExpenseModal categories={categories} householdId={householdId} token={token} onClose={()=>setModal(null)} onSaved={()=>setDataRevision(current=>current+1)}/>} 
+    {modal==='expense'&&<ExpenseModal categories={categories} householdId={householdId} token={token} onClose={()=>setModal(null)} onSaved={saved=>void expenseSaved(saved,true)}/>}
     {modal==='import'&&<ImportExpensesModal categories={categories} householdId={householdId} token={token} destination={movementPeriod} onClose={()=>setModal(null)} onImported={()=>setDataRevision(current=>current+1)}/>}
-    {editingExpense&&<ExpenseModal item={editingExpense} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingExpense(null)} onSaved={()=>setDataRevision(current=>current+1)}/>} 
-    {modal==='receipt'&&<ReceiptModal householdId={householdId} token={token} categories={categories} onClose={()=>setModal(null)} onCreated={()=>setDataRevision(current=>current+1)}/>} 
+    {editingExpense&&<ExpenseModal item={editingExpense} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingExpense(null)} onSaved={saved=>void expenseSaved(saved,false)}/>}
+    {modal==='receipt'&&<ReceiptModal householdId={householdId} token={token} categories={categories} onClose={()=>setModal(null)} onCreated={saved=>void expenseSaved(saved,true)}/>}
     {modal==='budget'&&<BudgetModal householdId={householdId} token={token} onClose={()=>setModal(null)} onCreated={b=>{setBudgets([b,...budgets]);setDataRevision(current=>current+1)}}/>}
     {creatingHousehold&&<CreateHouseholdModal token={token} onClose={()=>setCreatingHousehold(false)} onCreated={created=>{setHouseholds(current=>[...current,created]);selectHousehold(created)}}/>}
     {creatingRecurring&&<RecurringExpenseModal categories={categories} householdId={householdId} token={token} onClose={()=>setCreatingRecurring(false)} onSaved={created=>{setRecurring(current=>[created,...current]);void refreshOverview()}}/>}
     {editingRecurring&&<RecurringExpenseModal item={editingRecurring} categories={categories} householdId={householdId} token={token} onClose={()=>setEditingRecurring(null)} onSaved={updated=>{setRecurring(current=>current.map(item=>item.id===updated.id?updated:item));void refreshOverview()}}/>}
+    {expenseMatchesToReview.length>0&&<ExpenseMatchesModal householdId={householdId} token={token} matches={expenseMatchesToReview} onClose={()=>{setExpenseMatchesToReview([]);setDataRevision(current=>current+1)}} onChanged={()=>undefined}/>}
   </div>
 }
 

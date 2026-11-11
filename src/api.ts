@@ -145,6 +145,34 @@ export type PushSubscriptionInfo = {
 export type PushSubscriptionPayload = {
   endpoint: string; p256dh: string; auth: string; expirationTimeUtc?: string | null; deviceName?: string | null
 }
+export type ShoppingListStatus = 'Active' | 'Archived'
+export type ShoppingListItemStatus = 'Active' | 'Purchased' | 'Removed'
+export type ShoppingListItem = {
+  id: string; productName: string; brand?: string | null; variant?: string | null
+  quantity?: number | null; unit?: string | null; expectedPrice?: number | null; notes?: string | null
+  source: 'Manual' | 'ProductPhoto'; detectionConfidence?: number | null; status: ShoppingListItemStatus
+  createdAtUtc: string; completedAtUtc?: string | null
+}
+export type ShoppingList = {
+  id: string; name: string; status: ShoppingListStatus; createdAtUtc: string
+  activeItemCount: number; items: ShoppingListItem[]
+}
+export type ShoppingListItemPayload = {
+  productName: string; brand?: string | null; quantity?: number | null; unit?: string | null
+  expectedPrice?: number | null; notes?: string | null
+}
+export type ShoppingListImageResult = {
+  item: ShoppingListItem
+  recognition: { productName: string; brand?: string | null; variant?: string | null; suggestedQuantity?: number | null; suggestedUnit?: string | null; confidence: number }
+}
+export type ExpenseMatchStatus = 'Pending' | 'Approved' | 'Rejected'
+export type ExpenseMatch = {
+  id: string; shoppingListId: string; shoppingListName: string; shoppingListItemId: string; productName: string
+  expenseId: string; expenseLineId: string; expenseLineDescription: string
+  requestedQuantityAtDetection?: number | null; detectedPurchasedQuantity?: number | null
+  approvedPurchasedQuantity?: number | null; remainingQuantity?: number | null
+  confidence: number; status: ExpenseMatchStatus; createdAtUtc: string; reviewedAtUtc?: string | null
+}
 
 export const api = {
   sendOtp: (email: string) => request<{ success: boolean; message: string; expiresAt: string }>('/api/otp/send', { method: 'POST', body: JSON.stringify({ email }) }),
@@ -192,6 +220,17 @@ export const api = {
     return request<ReceiptParseResult>(`/api/households/${householdId}/receipts/parse?acceptLowQuality=${acceptLowQuality}`, { method: 'POST', body: form }, token)
   },
   validateReceiptParse: (householdId: string, parseId: string, data: { isValid: boolean; notes?: string | null }, token: string) => request(`/api/households/${householdId}/receipts/parses/${parseId}/validation`, { method: 'PATCH', body: JSON.stringify(data) }, token),
+  shoppingLists: (householdId: string, token: string, activeOnly = true, includeCompletedItems = false, signal?: AbortSignal) => request<ShoppingList[]>(`/api/households/${householdId}/shopping-lists?activeOnly=${activeOnly}&includeCompletedItems=${includeCompletedItems}`, { signal }, token),
+  shoppingList: (householdId: string, listId: string, token: string, includeCompletedItems = true) => request<ShoppingList>(`/api/households/${householdId}/shopping-lists/${listId}?includeCompletedItems=${includeCompletedItems}`, {}, token),
+  createShoppingList: (householdId: string, name: string, token: string) => request<ShoppingList>(`/api/households/${householdId}/shopping-lists`, { method: 'POST', body: JSON.stringify({ name }) }, token),
+  updateShoppingList: (householdId: string, listId: string, data: { name: string; status: ShoppingListStatus }, token: string) => request<ShoppingList>(`/api/households/${householdId}/shopping-lists/${listId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
+  archiveShoppingList: (householdId: string, listId: string, token: string) => request<void>(`/api/households/${householdId}/shopping-lists/${listId}`, { method: 'DELETE' }, token),
+  addShoppingListItem: (householdId: string, listId: string, data: ShoppingListItemPayload, token: string) => request<ShoppingListItem>(`/api/households/${householdId}/shopping-lists/${listId}/items`, { method: 'POST', body: JSON.stringify(data) }, token),
+  addShoppingListItemFromImage: (householdId: string, listId: string, file: File, token: string) => { const form = new FormData(); form.append('file', file); return request<ShoppingListImageResult>(`/api/households/${householdId}/shopping-lists/${listId}/items/from-image`, { method: 'POST', body: form }, token) },
+  updateShoppingListItem: (householdId: string, listId: string, itemId: string, data: ShoppingListItemPayload, token: string) => request<ShoppingListItem>(`/api/households/${householdId}/shopping-lists/${listId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
+  removeShoppingListItem: (householdId: string, listId: string, itemId: string, token: string) => request<void>(`/api/households/${householdId}/shopping-lists/${listId}/items/${itemId}`, { method: 'DELETE' }, token),
+  expenseMatches: (householdId: string, token: string, status: ExpenseMatchStatus = 'Pending', signal?: AbortSignal) => request<ExpenseMatch[]>(`/api/households/${householdId}/shopping-lists/expense-matches?status=${status}`, { signal }, token),
+  reviewExpenseMatch: (householdId: string, matchId: string, data: { decision: 'Approved' | 'Rejected'; purchasedQuantity?: number }, token: string) => request<ExpenseMatch>(`/api/households/${householdId}/shopping-lists/expense-matches/${matchId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
   notifications: (token: string, unreadOnly = false) => request<FingsNotification[]>(`/api/notifications?unreadOnly=${unreadOnly}`, {}, token),
   markNotificationRead: (notificationId: string, token: string) => request<void>(`/api/notifications/${notificationId}/read`, { method: 'POST' }, token),
   notificationPreferences: (token: string) => request<NotificationPreference[]>('/api/notification-preferences', {}, token),
