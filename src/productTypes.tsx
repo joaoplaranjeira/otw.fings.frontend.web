@@ -4,7 +4,7 @@ import { api, ApiError, type Category, type ProductType } from './api'
 
 function message(error: unknown, fallback: string) { return error instanceof ApiError ? error.message : fallback }
 
-export function ProductTypePicker({ items, selectedId, onSelect, loading = false, heading = 'Que tipo de produto queres adicionar?', hint = 'Escolhe o tipo para prepararmos automaticamente o contexto certo.' }: { items: ProductType[]; selectedId?: string; onSelect: (item: ProductType) => void; loading?: boolean; heading?: string; hint?: string }) {
+export function ProductTypePicker({ items, selectedId, onSelect, onCreate, loading = false, heading = 'Que tipo de produto queres adicionar?', hint = 'Escolhe o tipo para prepararmos automaticamente o contexto certo.' }: { items: ProductType[]; selectedId?: string; onSelect: (item: ProductType) => void; onCreate?: (suggestedName: string) => void; loading?: boolean; heading?: string; hint?: string }) {
   const [search, setSearch] = useState('')
   const normalized = search.trim().toLocaleLowerCase('pt-PT')
   const visible = useMemo(() => items.filter(item => item.isActive && (!normalized || `${item.name} ${item.categoryName} ${item.subcategoryName || ''}`.toLocaleLowerCase('pt-PT').includes(normalized))), [items, normalized])
@@ -13,6 +13,7 @@ export function ProductTypePicker({ items, selectedId, onSelect, loading = false
     <header><span><Sparkles /></span><div><h3>{heading}</h3><p>{hint}</p></div></header>
     <label className="product-type-search"><Search /><input autoFocus value={search} onChange={event => setSearch(event.target.value)} placeholder="Pesquisar leite, arroz, champô…" />{search && <button type="button" aria-label="Limpar pesquisa" onClick={() => setSearch('')}><X /></button>}</label>
     {loading ? <div className="product-type-picker-state"><LoaderCircle className="spin" /> A carregar tipos de produto…</div> : groups.length ? <div className="product-type-groups">{groups.map(([category, products]) => <div key={category}><small>{category}</small><div>{products.map(item => <button type="button" className={selectedId === item.id ? 'selected' : ''} key={item.id} onClick={() => onSelect(item)}><span><Package /></span><div><strong>{item.name}</strong><small>{item.subcategoryName || 'Sem subcategoria'}</small></div>{selectedId === item.id ? <Check /> : <ChevronRight />}</button>)}</div></div>)}</div> : <div className="product-type-picker-state"><Package /> {search ? 'Nenhum tipo corresponde à pesquisa.' : 'Ainda não existem tipos de produto ativos.'}</div>}
+    {onCreate && !loading && <button type="button" className="product-type-quick-create" onClick={() => onCreate(search.trim())}><Plus /><span><strong>{search && !groups.length ? `Criar “${search.trim()}”` : 'Não encontras o tipo?'}</strong><small>Adiciona-o ao catálogo sem sair daqui</small></span><ChevronRight /></button>}
   </section>
 }
 
