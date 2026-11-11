@@ -66,6 +66,13 @@ export type Category = {
   id: string; name: string; color?: string; icon?: string; isActive: boolean
   subcategories: { id: string; name: string; isActive: boolean }[]
 }
+export type ProductType = {
+  id: string; name: string; categoryId: string; categoryName: string
+  subcategoryId?: string | null; subcategoryName?: string | null; isActive: boolean
+}
+export type ProductTypePayload = {
+  name: string; categoryId: string; subcategoryId?: string | null; isActive?: boolean
+}
 export type ExpenseLine = {
   id: string; description: string; quantity?: number | null; unitPrice?: number | null; amount: number
   categoryId: string; categoryName: string; subcategoryId?: string | null; subcategoryName?: string | null; position: number
@@ -148,7 +155,7 @@ export type PushSubscriptionPayload = {
 export type ShoppingListStatus = 'Active' | 'Archived'
 export type ShoppingListItemStatus = 'Active' | 'Purchased' | 'Removed'
 export type ShoppingListItem = {
-  id: string; productName: string; brand?: string | null; variant?: string | null
+  id: string; productTypeId?: string | null; productTypeName: string; brand?: string | null; variant?: string | null
   quantity?: number | null; unit?: string | null; expectedPrice?: number | null; notes?: string | null
   source: 'Manual' | 'ProductPhoto'; detectionConfidence?: number | null; status: ShoppingListItemStatus
   createdAtUtc: string; completedAtUtc?: string | null
@@ -158,16 +165,16 @@ export type ShoppingList = {
   activeItemCount: number; items: ShoppingListItem[]
 }
 export type ShoppingListItemPayload = {
-  productName: string; brand?: string | null; quantity?: number | null; unit?: string | null
+  productTypeId?: string | null; productTypeName?: string | null; brand?: string | null; quantity?: number | null; unit?: string | null
   expectedPrice?: number | null; notes?: string | null
 }
 export type ShoppingListImageResult = {
   item: ShoppingListItem
-  recognition: { productName: string; brand?: string | null; variant?: string | null; suggestedQuantity?: number | null; suggestedUnit?: string | null; confidence: number }
+  recognition: { productTypeName: string; brand?: string | null; variant?: string | null; suggestedQuantity?: number | null; suggestedUnit?: string | null; confidence: number }
 }
 export type ExpenseMatchStatus = 'Pending' | 'Approved' | 'Rejected'
 export type ExpenseMatch = {
-  id: string; shoppingListId: string; shoppingListName: string; shoppingListItemId: string; productName: string
+  id: string; shoppingListId: string; shoppingListName: string; shoppingListItemId: string; productTypeName: string
   expenseId: string; expenseLineId: string; expenseLineDescription: string
   requestedQuantityAtDetection?: number | null; detectedPurchasedQuantity?: number | null
   approvedPurchasedQuantity?: number | null; remainingQuantity?: number | null
@@ -196,6 +203,9 @@ export const api = {
   householdInvitation: (code: string) => request<HouseholdInvitationPreview>(`/api/household-invitations/${encodeURIComponent(code)}`),
   acceptHouseholdInvitation: (code: string, token: string) => request<HouseholdMember>(`/api/household-invitations/${encodeURIComponent(code)}/accept`, { method: 'POST' }, token),
   categories: (householdId: string, token: string, signal?: AbortSignal) => request<Category[]>(`/api/households/${householdId}/categories`, { signal }, token),
+  productTypes: (householdId: string, token: string, includeInactive = false, signal?: AbortSignal) => request<ProductType[]>(`/api/households/${householdId}/product-types?includeInactive=${includeInactive}`, { signal }, token),
+  createProductType: (householdId: string, data: ProductTypePayload, token: string) => request<ProductType>(`/api/households/${householdId}/product-types`, { method: 'POST', body: JSON.stringify({ name: data.name, categoryId: data.categoryId, subcategoryId: data.subcategoryId || null }) }, token),
+  updateProductType: (householdId: string, productTypeId: string, data: Required<Pick<ProductTypePayload, 'name' | 'categoryId'>> & { subcategoryId?: string | null; isActive: boolean }, token: string) => request<ProductType>(`/api/households/${householdId}/product-types/${productTypeId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
   expenses: (householdId: string, from: string, to: string, token: string, signal?: AbortSignal) => request<Expense[]>(`/api/households/${householdId}/expenses?from=${from}&to=${to}`, { signal }, token),
   expensesBySubcategory: (householdId: string, subcategoryId: string, from: string, to: string, token: string, signal?: AbortSignal) => request<Expense[]>(`/api/households/${householdId}/expenses/subcategories/${encodeURIComponent(subcategoryId)}?from=${from}&to=${to}`, { signal }, token),
   expenseSuggestions: (householdId: string, token: string) => request<ExpenseSuggestion[]>(`/api/households/${householdId}/expenses/suggestions`, {}, token),
@@ -225,7 +235,7 @@ export const api = {
   createShoppingList: (householdId: string, name: string, token: string) => request<ShoppingList>(`/api/households/${householdId}/shopping-lists`, { method: 'POST', body: JSON.stringify({ name }) }, token),
   updateShoppingList: (householdId: string, listId: string, data: { name: string; status: ShoppingListStatus }, token: string) => request<ShoppingList>(`/api/households/${householdId}/shopping-lists/${listId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
   archiveShoppingList: (householdId: string, listId: string, token: string) => request<void>(`/api/households/${householdId}/shopping-lists/${listId}`, { method: 'DELETE' }, token),
-  addShoppingListItem: (householdId: string, listId: string, data: ShoppingListItemPayload, token: string) => request<ShoppingListItem>(`/api/households/${householdId}/shopping-lists/${listId}/items`, { method: 'POST', body: JSON.stringify(data) }, token),
+  addShoppingListItem: (householdId: string, listId: string, data: ShoppingListItemPayload & { productTypeId: string }, token: string) => request<ShoppingListItem>(`/api/households/${householdId}/shopping-lists/${listId}/items`, { method: 'POST', body: JSON.stringify(data) }, token),
   addShoppingListItemFromImage: (householdId: string, listId: string, file: File, token: string) => { const form = new FormData(); form.append('file', file); return request<ShoppingListImageResult>(`/api/households/${householdId}/shopping-lists/${listId}/items/from-image`, { method: 'POST', body: form }, token) },
   updateShoppingListItem: (householdId: string, listId: string, itemId: string, data: ShoppingListItemPayload, token: string) => request<ShoppingListItem>(`/api/households/${householdId}/shopping-lists/${listId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(data) }, token),
   removeShoppingListItem: (householdId: string, listId: string, itemId: string, token: string) => request<void>(`/api/households/${householdId}/shopping-lists/${listId}/items/${itemId}`, { method: 'DELETE' }, token),

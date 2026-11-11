@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Archive, ArrowRight, Camera, Check, CheckCircle2, ChevronDown, CircleHelp, ImagePlus, ListChecks, LoaderCircle, PackageCheck, Pencil, Plus, RotateCcw, ShoppingBasket, Sparkles, Trash2, X } from 'lucide-react'
-import { api, ApiError, type ExpenseMatch, type ShoppingList, type ShoppingListItem, type ShoppingListItemPayload } from './api'
+import { api, ApiError, type ExpenseMatch, type ProductType, type ShoppingList, type ShoppingListItem, type ShoppingListItemPayload } from './api'
+import { ProductTypePicker } from './productTypes'
 
 const money = new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' })
 const quantity = new Intl.NumberFormat('pt-PT', { maximumFractionDigits: 2 })
@@ -16,31 +17,35 @@ function Overlay({ title, subtitle, onClose, children }: { title: string; subtit
   </div></div>
 }
 
-type ItemDraft = { productName: string; brand: string; quantity: string; unit: string; expectedPrice: string; notes: string }
-const emptyItem: ItemDraft = { productName: '', brand: '', quantity: '', unit: 'un', expectedPrice: '', notes: '' }
+type ItemDraft = { productTypeId: string; productTypeName: string; brand: string; quantity: string; unit: string; expectedPrice: string; notes: string }
+const emptyItem: ItemDraft = { productTypeId: '', productTypeName: '', brand: '', quantity: '', unit: 'un', expectedPrice: '', notes: '' }
 
 function draftFromItem(item?: ShoppingListItem): ItemDraft {
-  return item ? { productName: item.productName, brand: item.brand || '', quantity: item.quantity == null ? '' : String(item.quantity), unit: item.unit || '', expectedPrice: item.expectedPrice == null ? '' : String(item.expectedPrice), notes: item.notes || '' } : emptyItem
+  return item ? { productTypeId: item.productTypeId || '', productTypeName: item.productTypeName, brand: item.brand || '', quantity: item.quantity == null ? '' : String(item.quantity), unit: item.unit || '', expectedPrice: item.expectedPrice == null ? '' : String(item.expectedPrice), notes: item.notes || '' } : emptyItem
 }
 
 function itemPayload(draft: ItemDraft): ShoppingListItemPayload {
-  return { productName: draft.productName.trim(), brand: draft.brand.trim() || null, quantity: draft.quantity ? Number(draft.quantity.replace(',', '.')) : null, unit: draft.unit.trim() || null, expectedPrice: draft.expectedPrice ? Number(draft.expectedPrice.replace(',', '.')) : null, notes: draft.notes.trim() || null }
+  return { productTypeId: draft.productTypeId || null, productTypeName: draft.productTypeName.trim() || null, brand: draft.brand.trim() || null, quantity: draft.quantity ? Number(draft.quantity.replace(',', '.')) : null, unit: draft.unit.trim() || null, expectedPrice: draft.expectedPrice ? Number(draft.expectedPrice.replace(',', '.')) : null, notes: draft.notes.trim() || null }
 }
 
 function ItemModal({ householdId, token, list, item, onClose, onSaved }: { householdId: string; token: string; list: ShoppingList; item?: ShoppingListItem; onClose: () => void; onSaved: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useState<'manual' | 'photo'>(item ? 'manual' : 'manual')
   const [draft, setDraft] = useState(() => draftFromItem(item))
+  const [productTypes, setProductTypes] = useState<ProductType[]>([])
+  const [typesLoading, setTypesLoading] = useState(!item)
+  const [pickingType, setPickingType] = useState(!item)
   const [detectedItem, setDetectedItem] = useState<ShoppingListItem>()
   const [confidence, setConfidence] = useState<number>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  useEffect(() => { let active = true; setTypesLoading(true); api.productTypes(householdId, token).then(values => { if (active) setProductTypes(values) }).catch(reason => { if (active) setError(errorMessage(reason, 'Não foi possível carregar os tipos de produto.')) }).finally(() => { if (active) setTypesLoading(false) }); return () => { active = false } }, [householdId, token])
   async function upload(file?: File) {
     if (!file) return
     setBusy(true); setError('')
     try {
       const result = await api.addShoppingListItemFromImage(householdId, list.id, file, token)
-      setDetectedItem(result.item); setConfidence(result.recognition.confidence); setDraft(draftFromItem(result.item)); setMode('manual')
+      setDetectedItem(result.item); setConfidence(result.recognition.confidence); setDraft(draftFromItem(result.item)); setMode('manual'); setPickingType(false)
       onSaved()
     } catch (reason) { setError(errorMessage(reason, 'Não foi possível reconhecer o produto.')) }
     finally { setBusy(false); if (inputRef.current) inputRef.current.value = '' }
@@ -48,26 +53,26 @@ function ItemModal({ householdId, token, list, item, onClose, onSaved }: { house
   async function save(event: FormEvent) {
     event.preventDefault(); setError('')
     const payload = itemPayload(draft)
-    if (!payload.productName) { setError('Indica o nome do produto.'); return }
+    if (!item && !detectedItem && !payload.productTypeId) { setError('Escolhe primeiro um tipo de produto.'); setPickingType(true); return }
     if (payload.quantity != null && (!Number.isFinite(payload.quantity) || payload.quantity <= 0)) { setError('A quantidade deve ser superior a zero.'); return }
     if (payload.expectedPrice != null && (!Number.isFinite(payload.expectedPrice) || payload.expectedPrice < 0)) { setError('O preço não pode ser negativo.'); return }
     setBusy(true)
     try {
       if (item || detectedItem) await api.updateShoppingListItem(householdId, list.id, (item || detectedItem)!.id, payload, token)
-      else await api.addShoppingListItem(householdId, list.id, payload, token)
+      else await api.addShoppingListItem(householdId, list.id, { ...payload, productTypeId: payload.productTypeId! }, token)
       onSaved(); onClose()
     } catch (reason) { setError(errorMessage(reason, 'Não foi possível guardar o produto.')) }
     finally { setBusy(false) }
   }
   return <Overlay title={item ? 'Editar produto' : detectedItem ? 'Confirmar produto' : 'Adicionar produto'} subtitle={`Na lista “${list.name}”`} onClose={onClose}>
-    {!item && !detectedItem && <div className="shopping-entry-tabs"><button className={mode === 'manual' ? 'active' : ''} onClick={() => setMode('manual')}><Pencil /> Escrever</button><button className={mode === 'photo' ? 'active' : ''} onClick={() => setMode('photo')}><Camera /> Fotografar</button></div>}
+    {!item && !detectedItem && <div className="shopping-entry-tabs"><button className={mode === 'manual' ? 'active' : ''} onClick={() => { setMode('manual'); setPickingType(true) }}><Pencil /> Escolher tipo</button><button className={mode === 'photo' ? 'active' : ''} onClick={() => setMode('photo')}><Camera /> Fotografar</button></div>}
     {mode === 'photo' && !detectedItem ? <div className="shopping-photo-entry">
       <input ref={inputRef} hidden type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event => upload(event.target.files?.[0])} />
       <button className="shopping-photo-drop" disabled={busy} onClick={() => inputRef.current?.click()}>{busy ? <LoaderCircle className="spin" /> : <ImagePlus />}<strong>{busy ? 'A reconhecer o produto…' : 'Fotografar ou escolher imagem'}</strong><span>JPEG, PNG ou WebP · máximo 10 MB</span></button>
       {error && <div className="form-error">{error}</div>}
-    </div> : <form className="modal-form shopping-item-form" onSubmit={save}>
+    </div> : pickingType && mode === 'manual' ? <div className="shopping-type-step"><ProductTypePicker items={productTypes} selectedId={draft.productTypeId} loading={typesLoading} onSelect={selected => { setDraft({ ...draft, productTypeId: selected.id, productTypeName: selected.name }); setPickingType(false); setError('') }} />{error && <div className="form-error">{error}</div>}</div> : <form className="modal-form shopping-item-form" onSubmit={save}>
       {detectedItem && <div className={`recognition-note ${(confidence || 0) < .8 ? 'review' : ''}`}><Sparkles /><div><strong>{(confidence || 0) < .8 ? 'Confirma os dados reconhecidos' : 'Produto reconhecido'}</strong><span>{Math.round((confidence || 0) * 100)}% de confiança · podes corrigir antes de guardar</span></div></div>}
-      <label>Produto<input autoFocus required maxLength={250} value={draft.productName} onChange={event => setDraft({ ...draft, productName: event.target.value })} placeholder="Ex.: Leite meio gordo" /></label>
+      <div className="selected-product-type"><span><ShoppingBasket /></span><div><small>TIPO DE PRODUTO</small><strong>{draft.productTypeName || 'Não associado ao catálogo'}</strong></div><button type="button" onClick={() => { setMode('manual'); setPickingType(true) }}>Alterar</button></div>
       <div className="input-pair"><label>Marca <small>opcional</small><input value={draft.brand} onChange={event => setDraft({ ...draft, brand: event.target.value })} placeholder="Ex.: Mimosa" /></label><label>Preço esperado <small>opcional</small><div className="shopping-price-input"><span>€</span><input inputMode="decimal" value={draft.expectedPrice} onChange={event => setDraft({ ...draft, expectedPrice: event.target.value })} placeholder="0,00" /></div></label></div>
       <div className="input-pair"><label>Quantidade <small>opcional</small><input inputMode="decimal" value={draft.quantity} onChange={event => setDraft({ ...draft, quantity: event.target.value })} placeholder="1" /></label><label>Unidade <small>opcional</small><input value={draft.unit} onChange={event => setDraft({ ...draft, unit: event.target.value })} placeholder="un, kg, L…" /></label></div>
       <label>Notas <small>opcional</small><textarea rows={3} value={draft.notes} onChange={event => setDraft({ ...draft, notes: event.target.value })} placeholder="Preferências, tamanho ou variedade" /></label>
@@ -109,7 +114,7 @@ export function ShoppingListsPage({ householdId, token, readOnly, revision = 0, 
   const activeItems = lists.filter(list => list.status === 'Active').reduce((sum, list) => sum + list.activeItemCount, 0)
   async function createList(event: FormEvent) { event.preventDefault(); if (!newList.trim()) return; setCreating(true); setError(''); try { await api.createShoppingList(householdId, newList.trim(), token); setNewList(''); await load(); onChanged?.() } catch (reason) { setError(errorMessage(reason, 'Não foi possível criar a lista.')) } finally { setCreating(false) } }
   async function archive(list: ShoppingList) { if (!window.confirm(`Arquivar “${list.name}”? O histórico será mantido.`)) return; try { await api.archiveShoppingList(householdId, list.id, token); await load(); onChanged?.() } catch (reason) { setError(errorMessage(reason, 'Não foi possível arquivar a lista.')) } }
-  async function removeItem(list: ShoppingList, item: ShoppingListItem) { if (!window.confirm(`Remover “${item.productName}” desta lista?`)) return; try { await api.removeShoppingListItem(householdId, list.id, item.id, token); await load(); onChanged?.() } catch (reason) { setError(errorMessage(reason, 'Não foi possível remover o produto.')) } }
+  async function removeItem(list: ShoppingList, item: ShoppingListItem) { if (!window.confirm(`Remover “${item.productTypeName}” desta lista?`)) return; try { await api.removeShoppingListItem(householdId, list.id, item.id, token); await load(); onChanged?.() } catch (reason) { setError(errorMessage(reason, 'Não foi possível remover o produto.')) } }
   async function restore(list: ShoppingList) { try { await api.updateShoppingList(householdId, list.id, { name: list.name, status: 'Active' }, token); await load(); onChanged?.() } catch (reason) { setError(errorMessage(reason, 'Não foi possível reativar a lista.')) } }
   function toggle(id: string) { setExpanded(current => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next }) }
   return <div className="shopping-page">
@@ -123,8 +128,8 @@ export function ShoppingListsPage({ householdId, token, readOnly, revision = 0, 
       return <article className={`shopping-list-card ${list.status === 'Archived' ? 'archived' : ''}`} key={list.id}>
         <header><button className="shopping-list-title" onClick={() => toggle(list.id)} aria-expanded={open}><span><ShoppingBasket /></span><div><strong>{list.name}</strong><small>{list.activeItemCount ? `${list.activeItemCount} por comprar` : 'Tudo tratado'}</small></div><ChevronDown className={open ? 'open' : ''} /></button>{!readOnly && list.status === 'Active' && <div className="shopping-list-actions"><button title="Adicionar produto" onClick={() => { setSelectedList(list); setEditingItem(undefined) }}><Plus /></button><button title="Editar nome" onClick={() => setRenamingList(list)}><Pencil /></button><button title="Arquivar lista" onClick={() => archive(list)}><Archive /></button></div>}{!readOnly && list.status === 'Archived' && <button className="restore-list" onClick={() => restore(list)}><RotateCcw /> Reativar</button>}</header>
         <div className="shopping-progress"><i style={{ width: `${relevantCount ? done.length / relevantCount * 100 : 0}%` }} /></div>
-        {open && <div className="shopping-items">{pending.length === 0 && done.length === 0 ? <div className="shopping-list-empty">Esta lista ainda está vazia.</div> : <>{pending.map(item => <div className="shopping-item" key={item.id}><span className="shopping-item-check" /><div><strong>{item.productName}</strong><small>{[item.brand, item.variant, item.quantity != null ? `${quantity.format(item.quantity)}${item.unit ? ` ${item.unit}` : ''}` : null].filter(Boolean).join(' · ') || 'Sem detalhes'}{item.expectedPrice != null ? ` · ${money.format(item.expectedPrice)}` : ''}</small>{item.notes && <em>{item.notes}</em>}</div>{item.source === 'ProductPhoto' && <span className="photo-badge"><Camera /> foto</span>}{!readOnly && <div className="shopping-item-actions"><button aria-label={`Editar ${item.productName}`} onClick={() => { setSelectedList(list); setEditingItem(item) }}><Pencil /></button><button aria-label={`Remover ${item.productName}`} onClick={() => removeItem(list, item)}><Trash2 /></button></div>}</div>)}{done.length > 0 && <details className="shopping-completed"><summary><CheckCircle2 /> {done.length} {done.length === 1 ? 'comprado' : 'comprados'}</summary>{done.map(item => <div key={item.id}><Check /> <span>{item.productName}</span></div>)}</details>}</>}</div>}
-        {!open && pending.length > 0 && <div className="shopping-preview">{pending.slice(0, 3).map(item => <span key={item.id}>{item.productName}</span>)}{pending.length > 3 && <span>+{pending.length - 3}</span>}</div>}
+        {open && <div className="shopping-items">{pending.length === 0 && done.length === 0 ? <div className="shopping-list-empty">Esta lista ainda está vazia.</div> : <>{pending.map(item => <div className="shopping-item" key={item.id}><span className="shopping-item-check" /><div><strong>{item.productTypeName}</strong><small>{[item.brand, item.variant, item.quantity != null ? `${quantity.format(item.quantity)}${item.unit ? ` ${item.unit}` : ''}` : null].filter(Boolean).join(' · ') || 'Sem detalhes'}{item.expectedPrice != null ? ` · ${money.format(item.expectedPrice)}` : ''}</small>{item.notes && <em>{item.notes}</em>}</div>{item.source === 'ProductPhoto' && <span className="photo-badge"><Camera /> foto</span>}{!readOnly && <div className="shopping-item-actions"><button aria-label={`Editar ${item.productTypeName}`} onClick={() => { setSelectedList(list); setEditingItem(item) }}><Pencil /></button><button aria-label={`Remover ${item.productTypeName}`} onClick={() => removeItem(list, item)}><Trash2 /></button></div>}</div>)}{done.length > 0 && <details className="shopping-completed"><summary><CheckCircle2 /> {done.length} {done.length === 1 ? 'comprado' : 'comprados'}</summary>{done.map(item => <div key={item.id}><Check /> <span>{item.productTypeName}</span></div>)}</details>}</>}</div>}
+        {!open && pending.length > 0 && <div className="shopping-preview">{pending.slice(0, 3).map(item => <span key={item.id}>{item.productTypeName}</span>)}{pending.length > 3 && <span>+{pending.length - 3}</span>}</div>}
       </article>
     })}</div>}
     {selectedList && <ItemModal householdId={householdId} token={token} list={selectedList} item={editingItem} onClose={() => { setSelectedList(undefined); setEditingItem(undefined) }} onSaved={() => { void load(); onChanged?.() }} />}
@@ -169,7 +174,7 @@ export function ExpenseMatchesModal({ householdId, token, matches: initialMatche
         const enteredQuantity = Number((drafts[match.id]?.quantity || '0').replace(',', '.'))
         const previewRemaining = Math.max(0, (requested || 0) - (Number.isFinite(enteredQuantity) ? enteredQuantity : 0))
         return <article className={`match-card ${match.status !== 'Pending' ? 'reviewed' : ''}`} key={match.id}>
-          <div className="match-card-head"><span className={`match-confidence ${match.confidence >= .8 ? 'high' : ''}`}>{Math.round(match.confidence * 100)}%</span><div><small>{match.shoppingListName}</small><h3>{match.productName}</h3></div>{match.status !== 'Pending' && <span className={`match-decision ${match.status.toLowerCase()}`}><Check /> {match.status === 'Approved' ? 'Confirmado' : 'Mantido'}</span>}</div>
+          <div className="match-card-head"><span className={`match-confidence ${match.confidence >= .8 ? 'high' : ''}`}>{Math.round(match.confidence * 100)}%</span><div><small>{match.shoppingListName}</small><h3>{match.productTypeName}</h3></div>{match.status !== 'Pending' && <span className={`match-decision ${match.status.toLowerCase()}`}><Check /> {match.status === 'Approved' ? 'Confirmado' : 'Mantido'}</span>}</div>
           {match.status === 'Pending' && <><div className="match-comparison"><div><small>NA LISTA</small><strong>{requested == null ? 'Sem quantidade' : `${quantity.format(requested)} pedido${requested === 1 ? '' : 's'}`}</strong></div><ArrowRight /><div><small>NO TALÃO</small><strong>{detected == null ? 'Quantidade por indicar' : `${quantity.format(detected)} encontrado${detected === 1 ? '' : 's'}`}</strong></div><span className={partial ? 'partial' : complete ? 'complete' : 'attention'}>{partial ? 'Compra parcial' : complete ? 'Pode concluir' : 'Confirma a quantidade'}</span></div>
             <div className="match-source"><ReceiptLineIcon /><span>“{match.expenseLineDescription}”</span></div>
             <label className="match-quantity">Quantidade comprada<input inputMode="decimal" value={drafts[match.id]?.quantity || ''} onChange={event => setDrafts({ ...drafts, [match.id]: { quantity: event.target.value } })} placeholder="Indica a quantidade" /></label>
